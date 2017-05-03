@@ -1,3 +1,10 @@
+# Set up logging
+import logging
+
+log_filename = 'error.log'
+logging.basicConfig(filename=log_filename, level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 # Count TIFFs
 # First let's check for subdirectories in the BAR/toProcess folder
 # Count the number of TIFFs in the folder
@@ -9,7 +16,7 @@ import glob, os
 sourcePath = 'C:\\BARtest\\toProcess\\'
 destinationPath = 'C:\\BARtest\\toQC\\'
 
-# set up the dict
+# Set up the dict
 tifCount = {}
 
 for root, dirs, files in os.walk(sourcePath):
@@ -21,7 +28,6 @@ for root, dirs, files in os.walk(sourcePath):
 
 		# Add the value to the dict
 		tifCount[dir] = tifs
-
 
 
 
@@ -40,7 +46,7 @@ gc = gspread.authorize(credentials)
 sh = gc.open_by_key('1tZjpKZfkGsuUD1iEx_blclJiNQBcfiGhkdXPn9voYGo')
 wks = sh.worksheet('itemList')
 
-# set up list of issues to process
+# Set up list of issues to process
 processList = []
 
 for issue in tifCount:
@@ -52,17 +58,18 @@ for issue in tifCount:
 	row_number = cell_list[0].row
 	val = wks.acell('F'+str(row_number)).value
 
-	print issue, 'has', val, 'pages'
-	print issue, 'has', tifCount[issue], 'TIFFs'
+	logger.info('%s has %s pages', issue, val)
+	logger.info('%s has %s TIFFs', issue, tifCount[issue])
 
 	if int(val) == int(tifCount[issue]):
 		processList.append(issue)
-		print 'yes!', issue, 'contains correct # of TIFFs'
+		logger.info('Yes! %s contains correct # of TIFFs', issue)
 	else:
-		print 'mismatch error! with', issue
+		logger.debug('Mismatch! Error with %s', issue)
 
-print 'OK, lets process', processList
+logger.info('Going to process the following issues: %s', processList)
 
+print 'Done!'
 
 
 
@@ -74,4 +81,4 @@ print 'OK, lets process', processList
 # 	destination = destinationPath+issue
 # 	shutil.move(source, destination)
 
-# 	print 'Moved', issue, 'to QC'
+# 	logger.info('Moved %s to QC', issue)
