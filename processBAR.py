@@ -5,10 +5,14 @@
 
 import glob, os
 
+# When testing, set these accordingly
+sourcePath = 'C:\\BARtest\\toProcess\\'
+destinationPath = 'C:\\BARtest\\toQC\\'
+
 # set up the dict
 tifCount = {}
 
-for root, dirs, files in os.walk('c:\\BAR\\toProcess'):
+for root, dirs, files in os.walk(sourcePath):
 	for dir in dirs:
 		issue = os.path.join(root, dir)
 
@@ -58,3 +62,16 @@ for issue in tifCount:
 		print 'mismatch error! with', issue
 
 print 'OK, lets process', processList
+
+
+
+
+# # Move issues to QC folder
+# import shutil
+
+# for issue in processList:
+# 	source = sourcePath+issue
+# 	destination = destinationPath+issue
+# 	shutil.move(source, destination)
+
+# 	print 'Moved', issue, 'to QC'
