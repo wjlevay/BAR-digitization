@@ -135,3 +135,5 @@ for issue in process_list:
 # 	shutil.move(source, destination)
 
 # 	logger.info('Moved %s to QC', issue)
+
+logger.info('OK, all done for now.')
