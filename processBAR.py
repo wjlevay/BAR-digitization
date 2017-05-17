@@ -1,3 +1,11 @@
+###
+# GLBT Historical Society
+# BAR Digitization Project Image Processing\
+# by Bill Levay
+# This is an attempt at some automated image processing that can be run on a folder of TIFFs, 
+# ideally at night or on the weekend, while no one is using the local machine for scanning.
+###
+
 import logging, glob, os, gspread, shutil, subprocess, glymur
 from oauth2client.service_account import ServiceAccountCredentials
 from PyPDF2 import PdfFileMerger, PdfFileReader
@@ -5,6 +13,9 @@ from PyPDF2 import PdfFileMerger, PdfFileReader
 # When testing, set these accordingly
 source_path = 'C:\\BARtest\\toProcess\\'
 destination_path = 'C:\\BARtest\\toQC\\'
+
+#LCCN value for Bay Area Reporter
+LCCN = 'sn92019460'
 
 # Set up the dicts
 tif_count = {}
@@ -79,11 +90,13 @@ for issue in tif_count:
 
 		vol_cell = 'B'+row
 		issue_no_cell = 'C'+row
+		pub_cell = 'P'+row
 		JP2_cell = 'R'+row
 		OCR_cell = 'S'+row
 
 		vol = wks.acell(vol_cell).value
 		issue_no = wks.acell(issue_no_cell).value
+		publisher = wks.acell(pub_cell).value
 		JP2_val = wks.acell(JP2_cell).value
 		OCR_val = wks.acell(OCR_cell).value
 
@@ -104,6 +117,7 @@ for issue in tif_count:
 
 		# Add issue metadata to the issue_meta dict
 		single_issue_meta = {}
+		single_issue_meta['publisher'] = publisher
 		single_issue_meta['vol'] = vol
 		single_issue_meta['issue_no'] = issue_no
 		issue = str(issue)
@@ -148,36 +162,56 @@ else:
 
 
 ###
+# Add metadata tags to TIFFs via exiftool
+
+for issue in process_list:
+	file_list = tif_files[issue]
+
+	date = issue_meta[issue]['date']
+	vol = issue_meta[issue]['vol']
+	issue_no = issue_meta[issue]['issue_no']
+	
+	for file in file_list:
+		tif_path = source_path+issue+'\\'+file
+		pg_num = '' #need to define this!
+
+		exif_string = 'exiftool -DocumentName='+LCCN+' -ImageUniqueID='+date+'_1_'+pg_num+' -FileSource=print -Artist="GLBT Historical Society; '+scanned_by+'" -Make="Image Acess" -Model="Bookeye4 V1-A" --'
+
+
+
+
+###
 # Create derivatives with ImageMagick
-# for issue in process_list:
-# 	file_list = tif_files[issue]
-# 	for file in file_list:
-# 		file_path = source_path+issue+'\\'+file
-# 		jp2_path = source_path+issue+'\\'+file.replace('.tif','.jp2')
+for issue in process_list:
+	file_list = tif_files[issue]
+	for file in file_list:
+		file_path = source_path+issue+'\\'+file
+		jpg_path = source_path+issue+'\\'+file.replace('.tif','.jpg')
+		jp2_path = source_path+issue+'\\'+file.replace('.tif','.jp2')
 
-# 		# Run ImageMagick to create JP2s for each page
-# 		magick_string = 'magick '+file_path+' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:ilyrrates=1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625 '+jp2_path
-# 		logger.info('Running ImageMagick on %s...', file)
-# 		subprocess.check_output(magick_string)
-# 		logger.info('Complete')
+		# Run ImageMagick to create JP2s for each page
+		magick_string_jp2 = 'magick '+file_path+' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:ilyrrates=1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625 '+jp2_path
+		magick_string_jpg = 'magick -units PixelsPerInch '+file_path+' -quality 40 -density 150 '+jpg_path
+		logger.info('Running ImageMagick on %s...', file)
+		subprocess.check_output(magick_string_jp2)
+		subprocess.check_output(magick_string_jpg)
+		logger.info('Complete')
 
-# 	logger.info('Finished creating JP2s for %s', issue)
+	logger.info('Finished creating JP2s and JPGs for %s', issue)
 
-# 	# Update the spreadsheet
-# 	row = rows[issue]
-# 	JP2_cell = 'R'+row
-# 	try:
-# 		wks.update_acell(JP2_cell, 'TRUE')
-# 	except RequestError:
-# 		logger.error('RequestError. Couldn\'t write to Google Sheet for issue %s', issue)
+	# Update the spreadsheet
+	row = rows[issue]
+	JP2_cell = 'R'+row
+	try:
+		wks.update_acell(JP2_cell, 'TRUE')
+	except RequestError:
+		logger.error('RequestError. Couldn\'t write to Google Sheet for issue %s', issue)
 
 
 ###
 # Create JP2 XML box
 for issue in process_list:
 	date = issue_meta[issue]['date']
-	vol = issue_meta[issue]['vol']
-	issue_no = issue_meta[issue]['issue_no']
 
 	file_list = tif_files[issue]
 	page_count = len(file_list)
@@ -210,7 +244,10 @@ for issue in process_list:
 		jp2 = glymur.Jp2k(jp2_filename)
 		xmlbox = glymur.jp2box.XMLBox(filename=jp2xml_filename)
 		jp2.append(xmlbox)
-		print(jp2)
+		logger.info('Added XML box to %s', jp2_filename)
+		# os.remove(jp2xml_filename)
+		# logger.info('Cleaning up... Removed %s', jp2xml_filename)
+
 
 # ###
 # #OCR with Tesseract
@@ -282,6 +319,8 @@ for issue in process_list:
 # 			subprocess.check_output(saxon_string)
 
 # 			logger.info('Transformed %s to %s', file, xml)
+#			os.remove(hocr_filename)
+#			logger.info('Cleaning up... Removed %s', hocr_filename)
 # 			# Advance page_num
 # 			page_num += 1
 
@@ -296,7 +335,7 @@ for issue in process_list:
 # 	destination = destination_path+issue
 # 	shutil.move(source, destination)
 
-# 	logger.info('Moved %s to QC', issue)
+# 	logger.info('Cleaning up... Moved %s to QC', issue)
 
 print 'All done'
 logger.info('All done')
