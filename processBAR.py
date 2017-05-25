@@ -365,11 +365,15 @@ merger = PdfFileMerger()
 for issue in process_list:
 	issue_path = source_path+issue
 	file_list = os.listdir(issue_path)
-	page_num = 001
+	page_num = 1
 
 	# Append PDFs
 	for a_file in file_list:
-		if str(page_num)+'.pdf' in a_file:
+		
+		# ensure page num has three digits
+		page_str = str('{p:03d}'.format(p=page_num))
+
+		if page_str+'.pdf' in a_file:
 			pdf_filename = source_path+issue+sep+a_file
 			try:
 				merger.append(PdfFileReader(file(pdf_filename, 'rb')))
