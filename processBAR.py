@@ -1,6 +1,6 @@
 ###
 # GLBT Historical Society
-# BAR Digitization Project Image Processing\
+# BAR Digitization Project Image Processing
 # by Bill Levay
 # This is an attempt at some automated image processing that can be run on a folder of TIFFs, 
 # ideally at night or on the weekend, while no one is using the local machine for scanning.
@@ -42,7 +42,10 @@ logger.addHandler(handler)
 # Starting the run
 logger.info('Script started...')
 
+###
 # Count TIFFs
+###
+
 # First let's check for subdirectories in the BAR/toProcess folder and count the number of TIFFs in the folder
 # Later we'll compare this number to the page count recorded in the Google Sheet
 
@@ -58,8 +61,6 @@ for root, dirs, files in os.walk(source_path):
 
 		# write a list of TIFs to the tif_files dict
 		tif_files[dir] = glob.glob1(issue,'*.tif')
-		# print tifs
-		# print tif_files
 
 # Google Sheet setup
 scope = ['https://spreadsheets.google.com/feeds']
@@ -129,10 +130,8 @@ for issue in tif_count:
 
 		issue_meta[issue] = single_issue_meta
 
-	except:
-		logger.error('Could not find %s in Google Sheet. Something is wrong here', issue)
-
-
+	except Exception as e:
+		logger.error('Could not find %s in Google Sheet: %s', issue, e)
 
 # If we have issues in the list, check if the TIFs match the page count in the spreadsheet
 if len(process_list) > 0:
@@ -167,9 +166,11 @@ else:
 
 ###
 # Add metadata tags to TIFFs via exiftool
+###
 for issue in process_list:
 	file_list = tif_files[issue]
 
+	# get metadata
 	date = issue_meta[issue]['date']
 	vol = issue_meta[issue]['vol']
 	issue_no = issue_meta[issue]['issue_no']
@@ -177,26 +178,36 @@ for issue in process_list:
 	for file in file_list:
 		tif_path = source_path+issue+sep+file
 
-		# get the page number from the filename
+		# get the page number from the filename with some regex
 		m = re.search('_(\d\d\d).tif', tif_path)
+		# remove any leading zeros
 		pg_num = str(int(m.group(1)))
 
 		exif_string = 'exiftool -m -Title="Bay Area Reporter. (San Francisco, Calif.), '+date+', [p '+pg_num+']" -Description="Page from Bay Area Reporter" -Subject= -DocumentName='+LCCN+' -ImageUniqueID='+date+'_1_'+pg_num+' -FileSource=3 -n -Artist="GLBT Historical Society" -Make="Image Access" -Model="Bookeye4 V1-A, SN#BE4-SGS-V1A-00073239BCFD" '+tif_path
-		logger.info('Running Exiftool on %s...', file)
-		subprocess.check_output(exif_string)
-		logger.info('Complete')
+
+		try:
+			subprocess.check_output(exif_string)
+		except Exception as e:
+			logger.error('Error running Exiftool on %s: %s', file, e)
+		else:
+			logger.info('Running Exiftool on %s...', file)
 
 	logger.info('Finished fixing TIFF tags for %s', issue)
 
 	original_list = glob.glob1(source_path+issue,'*.tif_original')
 	for original in original_list:
-		os.remove(source_path+issue+sep+original)
-		logger.info('Cleaning up... Removed %s', original)
+		try:
+			os.remove(source_path+issue+sep+original)
+		except Exception as e:
+			logger.error('Could not remove %s: %s', original, e)
+		else:
+			logger.info('Cleaning up... Removed %s', original)
 
 
 
 ###
 # Create derivatives with ImageMagick
+###
 for issue in process_list:
 	file_list = tif_files[issue]
 	for file in file_list:
@@ -207,10 +218,15 @@ for issue in process_list:
 		# Run ImageMagick to create JP2s for each page
 		magick_string_jp2 = 'magick '+file_path+' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:ilyrrates=1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625 '+jp2_path
 		magick_string_jpg = 'magick -units PixelsPerInch '+file_path+' -quality 40 -density 150 '+jpg_path
-		logger.info('Running ImageMagick on %s...', file)
-		subprocess.check_output(magick_string_jp2)
-		# subprocess.check_output(magick_string_jpg)
-		logger.info('Complete')
+		
+		try:
+			subprocess.check_output(magick_string_jp2)
+			# subprocess.check_output(magick_string_jpg)
+		except Exception as e:
+			logger.error('Error running Imagemagick on %s: %s', file, e)
+		else:
+			logger.info('Running Imagemagick on %s...', file)
+
 
 	logger.info('Finished creating derivatives for %s', issue)
 
@@ -219,12 +235,13 @@ for issue in process_list:
 	JP2_cell = 'R'+row
 	try:
 		wks.update_acell(JP2_cell, 'TRUE')
-	except RequestError:
-		logger.error('RequestError. Couldn\'t write to Google Sheet for issue %s', issue)
+	except:
+		logger.error('Couldn\'t write to Google Sheet for issue %s', issue)
 
 
 ###
 # Create JP2 XML box
+###
 for issue in process_list:
 	date = issue_meta[issue]['date']
 
@@ -239,15 +256,21 @@ for issue in process_list:
 			# write out to new file
 			filename = source_path+issue+sep+a_file.replace('.tif','.jp2.xml')
 			xml_string = '<?xml version="1.0" encoding="UTF-8"?>\n<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdfsyntax-ns#">\n\t<rdf:Description xmlns:dc="http://purl.org/dc/elements/1.1/" rdf:about="urn:libraryofcongress:ndnp:mets:newspaper:page://sn92019460/'+date+'/1/'+str(page_num)+'">\n\t\t<dc:format>image/jp2</dc:format>\n\t\t<dc:title>\n\t\t\t<rdf:Alt>\n\t\t\t\t<rdf:li xml:lang="en">Bay Area Reporter. (San Francisco, Calif.), '+date+', [p '+str(page_num)+'].</rdf:li>\n\t\t\t</rdf:Alt>\n\t\t</dc:title>\n\t\t<dc:description>\n\t\t\t<rdf:Alt>\n\t\t\t\t<rdf:li xml:lang="en">Page from Bay Area Reporter. [See LCCN: sn92019460 for catalog record.]. Prepared by GLBT Historical Society.</rdf:li>\n\t\t\t</rdf:Alt>\n\t\t</dc:description>\n\t\t<dc:date>\n\t\t\t<rdf:Seq>\n\t\t\t\t<rdf:li xml:lang="x-default">'+date+'</rdf:li>\n\t\t\t</rdf:Seq>\n\t\t</dc:date>\n\t\t<dc:type>\n\t\t\t<rdf:Bag>\n\t\t\t\t<rdf:li xml:lang="en">text</rdf:li>\n\t\t\t\t<rdf:li xml:lang="en">newspaper</rdf:li>\n\t\t\t</rdf:Bag>\n\t\t</dc:type>\n\t</rdf:Description>\n</rdf:RDF>'
-			with open(filename, 'wb') as f:
-				f.write(xml_string)
 			
-			logger.info('Created JP2 XML for %s', a_file)
+			try:
+				with open(filename, 'wb') as f:
+					f.write(xml_string)
+			except Exception as e:
+				logger.error('Error writing XML for %s: %s', a_file, e)
+			else:
+				logger.info('Created JP2 XML for %s', a_file)
+			
 			page_num += 1
 
 
 ###
 # Add XML box to JP2s
+###
 for issue in process_list:
 	jp2_list = glob.glob1(source_path+issue,'*.jp2')
 
@@ -256,14 +279,24 @@ for issue in process_list:
 		jp2xml_filename = jp2_filename+'.xml'
 		exif_string = 'exiftool -m -xml '+jp2xml_filename+' '+jp2_filename
 
-		subprocess.check_output(exif_string)
-		logger.info('Added XML box to %s', a_jp2)
-		os.remove(jp2xml_filename)
-		logger.info('Cleaning up... Removed temp XML file for %s', a_jp2)
+		try:
+			subprocess.check_output(exif_string)
+		except Exception as e:
+			logger.error('Error with file %s: %s', a_jp2, e)
+		else:
+			logger.info('Added XML box to %s', a_jp2)
+
+		try:
+			os.remove(jp2xml_filename)
+		except Exception as e:
+			logger.error('Error with file %s: %s', a_jp2, e)
+		else:
+			logger.info('Cleaning up... Removed temp XML file for %s', a_jp2)
 
 
-# ###
+###
 # OCR with Tesseract
+###
 for issue in process_list:
 	file_list = tif_files[issue]
 	for file in file_list:
@@ -271,13 +304,19 @@ for issue in process_list:
 		hocr_path = file_path.replace('.tif','')
 
 		# Run OCR -- we're creating HOCR and PDF files for each page, which we'll further process later
-		logger.info('Creating HOCR for %s...', file)
-		subprocess.check_output(['tesseract', file_path, hocr_path, 'hocr'])
-		logger.info('Complete')
-
-		logger.info('Creating PDF for %s...', file)
-		subprocess.check_output(['tesseract', file_path, hocr_path, 'pdf'])
-		logger.info('Complete')
+		try:
+			subprocess.check_output(['tesseract', file_path, hocr_path, 'hocr'])
+		except Exception as e:
+			logger.error('Error running Tesseract on %s: %s', file, e)
+		else:
+			logger.info('Creating HOCR for %s...', file)
+		
+		try:
+			subprocess.check_output(['tesseract', file_path, hocr_path, 'pdf'])
+		except Exception as e:
+			logger.error('Error running Tesseract on %s: %s', file, e)
+		else:
+			logger.info('Creating PDF for %s...', file)
 
 	logger.info('Finished OCR on %s', issue)
 
@@ -286,11 +325,12 @@ for issue in process_list:
 	OCR_cell = 'S'+row
 	try:
 		wks.update_acell(OCR_cell, 'TRUE')
-	except RequestError:
-		logger.error('RequestError. Couldn\'t write to Google Sheet for issue %s', issue)
+	except:
+		logger.error('Error. Couldn\'t write to Google Sheet for issue %s', issue)
 
 ###
 # Downsample PDFs with ImageMagick
+###
 for issue in process_list:
 	pdf_list = glob.glob1(source_path+issue,'*.pdf')
 
@@ -298,20 +338,28 @@ for issue in process_list:
 		hires_pdf_path = source_path+issue+sep+a_pdf
 		lowres_pdf_path = hires_pdf_path.replace('.pdf', '_lo.pdf')
 		magick_string_pdf = 'magick -units PixelsPerInch '+file_path+' -quality 40 -density 150 '+pdf_path
-		logger.info('imagemagick is downsampling %s...', a_pdf)
-		subprocess.check_output(magick_string_pdf)
-		logger.info('Complete')
 
-		os.remove(hires_pdf_path)
-		os.rename(lowres_pdf_path, hires_pdf_path)
-		logger.info('Cleaning up... Removed hi-res PDF and renamed lo-res PDF for %s', a_pdf)
+		try:
+			subprocess.check_output(magick_string_pdf)
+		except Exception as e:
+			logger.error('Error with file %s: %s', a_pdf, e)
+		else:
+			logger.info('imagemagick is downsampling %s...', a_pdf)
+
+		try:
+			os.remove(hires_pdf_path)
+			os.rename(lowres_pdf_path, hires_pdf_path)
+		except Exception as e:
+			logger.error('Error trying to remove and rename file %s: %s', a_pdf, e)
+		else:
+			logger.info('Cleaning up... Removed hi-res PDF and renamed lo-res PDF for %s', a_pdf)
 
 	logger.info('Finished downsampling PDFs for %s', issue)
 
 
-
 ###
 # Merge (append) PDFs
+###
 merger = PdfFileMerger()
 
 for issue in process_list:
@@ -323,18 +371,26 @@ for issue in process_list:
 	for a_file in file_list:
 		if str(page_num)+'.pdf' in a_file:
 			pdf_filename = source_path+issue+sep+a_file
-			merger.append(PdfFileReader(file(pdf_filename, 'rb')))
-			logger.info('Appended %s to the PDF', a_file)
+			try:
+				merger.append(PdfFileReader(file(pdf_filename, 'rb')))
+			except Exception as e:
+				logger.error('Error appending %s: %s', a_file, e)
+			else:
+				logger.info('Appended %s to the PDF', a_file)
 			# Advance page_num
 			page_num += 1
 
-	merger.write(issue_path+'\\'+issue+'.pdf')
-	logger.info('Finished creating the issue PDF for %s', issue)
+	try:
+		merger.write(issue_path+'\\'+issue+'.pdf')
+	except Exception as e:
+		logger.error('Error creating the issue PDF for %s: %s', issue, e)
+	else:
+		logger.info('Finished creating the issue PDF for %s', issue)
 
 
 ###
 # Transform HOCR to ALTO using Saxon and XSL
-
+###
 xsl_filename = '..\hOCR-to-ALTO\hocr2alto2.1.xsl'
 
 for issue in process_list:
@@ -349,22 +405,38 @@ for issue in process_list:
 			xml_filename = source_path+issue+sep+xml
 			
 			saxon_string = 'java -cp C:\saxon\saxon9he.jar net.sf.saxon.Transform -t -s:'+hocr_filename+' -xsl:'+xsl_filename+' -o:'+xml_filename
-			subprocess.check_output(saxon_string)
 
-			logger.info('Transformed %s to %s', file, xml)
-			os.remove(hocr_filename)
-			logger.info('Cleaning up... Removed %s', hocr_filename)
+			try:
+				subprocess.check_output(saxon_string)
+			except Exception as e:
+				logger.error('Error transforming %s: %s', file, e)
+			else:
+				logger.info('Transformed %s to %s', file, xml)
+	
+			try:
+				os.remove(hocr_filename)
+			except:
+				logger.error('Error removing %s: %s', hocr_filename, e)
+			else:
+				logger.info('Cleaning up... Removed %s', hocr_filename)
 
 	logger.info('Finished creating ALTO XML for %s', issue)
 
 
+
+###
 # Move issues to QC folder
+###
 for issue in processList:
 	source = sourcePath+issue
 	destination = destination_path+issue
-	shutil.move(source, destination)
 
-	logger.info('Cleaning up... Moved %s to QC', issue)
+	try:
+		shutil.move(source, destination)
+	except Exception as e:
+		logger.error('Error moving %s to QC: %s', issue, e)
+	else:
+		logger.info('Cleaning up... Moved %s to QC', issue)
 
 print 'All done'
 logger.info('All done')
