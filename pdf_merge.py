@@ -1,7 +1,7 @@
 ###
 # Merge (append) PDFs
 ###
-import os, glob, re
+import os, re
 from PyPDF2 import PdfFileMerger, PdfFileReader
 
 # get dirs and pdfs
@@ -13,7 +13,6 @@ for root, dirs, files in os.walk(source_path):
 		issue = os.path.join(root, dir)
 		issue_pgs = {}
 
-		# file_list = glob.glob1(issue,'*.pdf')
 		file_list = [f for f in os.listdir(issue) if f.endswith('pdf')]
 		for afile in file_list:
 			file_path = issue+'\\'+afile
