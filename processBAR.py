@@ -8,11 +8,10 @@
 
 import logging, glob, os, re, gspread, shutil, subprocess
 from oauth2client.service_account import ServiceAccountCredentials
-from PyPDF2 import PdfFileMerger, PdfFileReader
 
 # When testing, set these accordingly
-source_path = 'C:\\BARtest\\toProcess\\'
-destination_path = 'C:\\BARtest\\toQC\\'
+source_path = 'C:\\BAR\\toProcess\\'
+destination_path = 'C:\\BAR\\toQC\\'
 sep = '\\'
 
 #LCCN value for Bay Area Reporter
@@ -320,6 +319,7 @@ for issue in process_list:
 
 	logger.info('Finished OCR on %s', issue)
 
+for issue in process_list:
 	# Update the spreadsheet
 	row = rows[issue]
 	OCR_cell = 'S'+row
@@ -327,69 +327,6 @@ for issue in process_list:
 		wks.update_acell(OCR_cell, 'TRUE')
 	except:
 		logger.error('Error. Couldn\'t write to Google Sheet for issue %s', issue)
-
-###
-# Downsample PDFs with ImageMagick
-###
-for issue in process_list:
-	pdf_list = glob.glob1(source_path+issue,'*.pdf')
-
-	for a_pdf in pdf_list:
-		hires_pdf_path = source_path+issue+sep+a_pdf
-		lowres_pdf_path = hires_pdf_path.replace('.pdf', '_lo.pdf')
-		magick_string_pdf = 'magick -units PixelsPerInch '+file_path+' -quality 40 -density 150 '+pdf_path
-
-		try:
-			subprocess.check_output(magick_string_pdf)
-		except Exception as e:
-			logger.error('Error with file %s: %s', a_pdf, e)
-		else:
-			logger.info('imagemagick is downsampling %s...', a_pdf)
-
-		try:
-			os.remove(hires_pdf_path)
-			os.rename(lowres_pdf_path, hires_pdf_path)
-		except Exception as e:
-			logger.error('Error trying to remove and rename file %s: %s', a_pdf, e)
-		else:
-			logger.info('Cleaning up... Removed hi-res PDF and renamed lo-res PDF for %s', a_pdf)
-
-	logger.info('Finished downsampling PDFs for %s', issue)
-
-
-###
-# Merge (append) PDFs
-###
-merger = PdfFileMerger()
-
-for issue in process_list:
-	issue_path = source_path+issue
-	file_list = os.listdir(issue_path)
-	page_num = 1
-
-	# Append PDFs
-	for a_file in file_list:
-		
-		# ensure page num has three digits
-		page_str = str('{p:03d}'.format(p=page_num))
-
-		if page_str+'.pdf' in a_file:
-			pdf_filename = source_path+issue+sep+a_file
-			try:
-				merger.append(PdfFileReader(file(pdf_filename, 'rb')))
-			except Exception as e:
-				logger.error('Error appending %s: %s', a_file, e)
-			else:
-				logger.info('Appended %s to the PDF', a_file)
-			# Advance page_num
-			page_num += 1
-
-	try:
-		merger.write(issue_path+'\\'+issue+'.pdf')
-	except Exception as e:
-		logger.error('Error creating the issue PDF for %s: %s', issue, e)
-	else:
-		logger.info('Finished creating the issue PDF for %s', issue)
 
 
 ###
@@ -417,12 +354,12 @@ for issue in process_list:
 			else:
 				logger.info('Transformed %s to %s', file, xml)
 	
-			try:
-				os.remove(hocr_filename)
-			except:
-				logger.error('Error removing %s: %s', hocr_filename, e)
-			else:
-				logger.info('Cleaning up... Removed %s', hocr_filename)
+			# try:
+			# 	os.remove(hocr_filename)
+			# except:
+			# 	logger.error('Error removing %s: %s', hocr_filename, e)
+			# else:
+			# 	logger.info('Cleaning up... Removed %s', hocr_filename)
 
 	logger.info('Finished creating ALTO XML for %s', issue)
 
@@ -431,8 +368,8 @@ for issue in process_list:
 ###
 # Move issues to QC folder
 ###
-for issue in processList:
-	source = sourcePath+issue
+for issue in process_list:
+	source = source_path+issue
 	destination = destination_path+issue
 
 	try:
