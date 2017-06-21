@@ -34,8 +34,8 @@ logger.info('Script started...')
 ###
 # Constants
 ###
-source_path = 'C:\\BARtest\\toProcess\\'
-destination_path = 'C:\\BARtest\\toQC\\'
+source_path = 'C:\\BAR\\toProcess\\'
+destination_path = 'C:\\BAR\\toQC\\'
 sep = '\\'
 
 LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
