@@ -11,47 +11,13 @@ from PyPDF2 import PdfFileMerger, PdfFileReader
 from oauth2client.service_account import ServiceAccountCredentials
 
 ###
-# Logging
-###
-# Set up logging (found here: https://fangpenlin.com/posts/2012/08/26/good-logging-practice-in-python/)
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# create a file handler
-handler = logging.FileHandler('processBAR.log')
-handler.setLevel(logging.INFO)
-
-# create a logging format
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-
-# add the handlers to the logger
-logger.addHandler(handler)
-
-# Starting the run
-logger.info('Script started...')
-
-###
-# Constants
-###
-source_path = 'C:\\BAR\\toProcess\\'
-destination_path = 'C:\\BAR\\toQC\\'
-sep = '\\'
-
-LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
-
-###
-# Google Sheet setup
-###
-scope = ['https://spreadsheets.google.com/feeds']
-credentials = ServiceAccountCredentials.from_json_keyfile_name('BAR Digitization-fb1d45aa1d32.json', scope)
-gc = gspread.authorize(credentials)
-
-
-###
 # Get issue metadata and create a list of issues to process
 ###
 def get_metadata():
+	# Google Sheet setup
+	scope = ['https://spreadsheets.google.com/feeds']
+	credentials = ServiceAccountCredentials.from_json_keyfile_name('BAR Digitization-fb1d45aa1d32.json', scope)
+	gc = gspread.authorize(credentials)
 
 	issue_meta = {}
 
@@ -111,14 +77,30 @@ def get_metadata():
 # Update Google Sheet after processing
 ###
 def update_sheet(issue):
+	# Google Sheet setup
+	scope = ['https://spreadsheets.google.com/feeds']
+	credentials = ServiceAccountCredentials.from_json_keyfile_name('BAR Digitization-fb1d45aa1d32.json', scope)
+	gc = gspread.authorize(credentials)
 
-	# Open spreadsheet and worksheet
-	sh = gc.open_by_key('1tZjpKZfkGsuUD1iEx_blclJiNQBcfiGhkdXPn9voYGo')
-	wks = sh.worksheet('itemList')
+	try:
 
-	wks.update_acell('Q' + row, issue_meta[issue]['pg_match'])
-	wks.update_acell('R' + row, issue_meta[issue]['derivs'])
-	wks.update_acell('S' + row, issue_meta[issue]['ocr'])
+		# Open spreadsheet and worksheet
+		sh = gc.open_by_key('1tZjpKZfkGsuUD1iEx_blclJiNQBcfiGhkdXPn9voYGo')
+		wks = sh.worksheet('itemList')
+
+		# Find cell
+		cell_list = wks.findall(issue)
+
+		# Get the row
+		row = str(cell_list[0].row)
+
+		# Update cells in that row
+		wks.update_acell('Q' + row, issue_meta[issue]['pg_match'])
+		wks.update_acell('R' + row, issue_meta[issue]['derivs'])
+		wks.update_acell('S' + row, issue_meta[issue]['ocr'])
+
+	except Exception as e:
+		logger.error('Could not update Google Sheet for %s: %s', issue, e)
 
 
 ###
@@ -201,8 +183,8 @@ def derivs(issue):
 		jp2_path = tif_path.replace('.tif','.jp2')
 
 		# Run ImageMagick to create JP2s for each page
-		magick_string_jp2 = 'magick ' + tif_path + ' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:ilyrrates=1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625 ' + jp2_path
-		magick_string_jpg = 'magick -units PixelsPerInch ' + tif_path + ' -quality 40 -density 150 ' + jpg_path
+		magick_string_jp2 = 'magick ' + tif_path + ' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:rate=0.125 -define jp2:lazy -define jp2:ilyrrates="1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625" ' + jp2_path
+		magick_string_jpg = 'magick -units PixelsPerInch ' + tif_path + ' -quality 60 -density 300 ' + jpg_path
 		
 		try:
 			subprocess.check_output(magick_string_jp2)
@@ -213,6 +195,7 @@ def derivs(issue):
 			logger.info('Running Imagemagick on %s...', tif)
 
 	jp2_list = glob.glob1(issue_path,'*.jp2')
+	jpg_list = glob.glob1(issue_path,'*.jpg')
 	if len(jp2_list) == len(tif_list):
 		logger.info('Finished with derivs for %s', issue)
 		issue_meta[issue]['derivs'] = 'TRUE'
@@ -254,7 +237,7 @@ def jp2xml(issue):
 	for a_jp2 in jp2_list:
 		jp2_filename = issue_path + sep + a_jp2
 		jp2xml_filename = jp2_filename + '.xml'
-		exif_string = 'exiftool -m -xml '+jp2xml_filename+' '+jp2_filename
+		exif_string = 'exiftool -m -xml ' + jp2xml_filename + ' ' + jp2_filename
 
 		try:
 			subprocess.check_output(exif_string)
@@ -297,6 +280,35 @@ def ocr(issue):
 
 	issue_meta[issue]['ocr'] = 'TRUE'
 	logger.info('Finished OCR on %s', issue)
+
+
+###
+# Downsample PDFs with ImageMagick
+###
+def downsample_pdf(issue):
+    pdf_list = glob.glob1(issue_path,'*.pdf')
+
+    for a_pdf in pdf_list:
+        hires_pdf_path = issue_path + sep + a_pdf
+        lowres_pdf_path = hires_pdf_path.replace('.pdf','_lo.pdf')
+        gs_string_pdf = '"C:\\Program Files (x86)\\gs\\gs9.21\\bin\\gswin32c.exe" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dAutoRotatePages=/None -dNOPAUSE -dQUIET -dBATCH -sOutputFile=' + lowres_pdf_path + ' ' + hires_pdf_path
+
+        try:
+            subprocess.check_output(gs_string_pdf)
+        except Exception as e:
+            logger.error('Error with file %s: %s', a_pdf, e)
+        else:
+            logger.info('ghostscript is downsampling %s...', a_pdf)
+
+        try:
+            os.remove(hires_pdf_path)
+            os.rename(lowres_pdf_path, hires_pdf_path)
+        except Exception as e:
+            logger.error('Error trying to remove and rename file %s: %s', a_pdf, e)
+        else:
+            logger.info('Cleaning up... Removed hi-res PDF and renamed lo-res PDF for %s', a_pdf)
+
+    logger.info('Finished downsampling PDFs for %s', issue)
 
 
 ###
@@ -383,19 +395,21 @@ def to_QC(issue):
 ###
 # Move issues from Complete to network backup
 ###
-def to_network(issue):
+def to_network():
 	source_path = 'C:\\BAR\\complete\\'
 	backup_path = 'Z:\\BAR\\'
 
-	source = source_path+issue
-	destination = backup_path+issue
+	for root, dirs, files in os.walk(source_path):
+		for issue in dirs:
+			source = source_path+issue
+			destination = backup_path+issue
 
-	try:
-		shutil.move(source, destination)
-	except Exception as e:
-		logger.error('Error moving %s to QC: %s', issue, e)
-	else:
-		logger.info('Cleaning up... Moved %s to Network Drive', issue)
+			try:
+				shutil.move(source, destination)
+			except Exception as e:
+				logger.error('Error moving %s to QC: %s', issue, e)
+			else:
+				logger.info('Cleaning up... Moved %s to Network Drive', issue)
 
 
 
@@ -403,8 +417,37 @@ def to_network(issue):
 # Start processing
 ###
 
+# Logging
+# Set up logging (found here: https://fangpenlin.com/posts/2012/08/26/good-logging-practice-in-python/)
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# create a file handler
+handler = logging.FileHandler('processBAR.log')
+# handler = logging.FileHandler('processBARtest.log')
+handler.setLevel(logging.INFO)
+
+# create a logging format
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+
+# add the handlers to the logger
+logger.addHandler(handler)
+
+# Starting the run
+logger.info('Script started...')
+
+# Constants
+source_path = 'C:\\BAR\\toProcess\\'
+# source_path = 'C:\\Users\\BLevay\\Dropbox\\GLBT\\BARtest\\'
+destination_path = 'C:\\BAR\\toQC\\'
+sep = '\\'
+
+LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
+
 issue_meta = get_metadata()
 process_list = process()
+# process_list = ['20050728']
 
 for issue in process_list:
 	issue_path = source_path + issue
@@ -413,10 +456,12 @@ for issue in process_list:
 	derivs(issue)
 	jp2xml(issue)
 	ocr(issue)
-	pdf_merge(issue)
+	# downsample_pdf(issue)
+	# pdf_merge(issue)
 	hocr2alto(issue)
 	to_QC(issue)
-	to_network(issue)
 	update_sheet(issue)
+
+# to_network()
 
 logger.info('ALL DONE')
