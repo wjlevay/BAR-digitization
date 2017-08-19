@@ -133,6 +133,50 @@ def process():
 	return process_list
 
 
+###
+# Deskew TIFFs
+###
+def deskew(issue):
+	# tif_list = issue_meta[issue]['tifs']
+	tif_list = glob.glob1(issue_path,'*.tif')
+
+	for tif in tif_list:
+		tif_path = issue_path + sep + tif
+		rotate_path = tif_path.replace('.tif','_rotate.tif')
+
+		find_angle = 'deskew -l 80 ' + tif_path
+
+		try:
+			output = subprocess.check_output(find_angle, stderr=subprocess.STDOUT)
+		except Exception as e:
+			logger.error('Error running Deskew on %s: %s', tif, e)
+
+		if output is not None:
+			m = re.search('Skew angle found: (.*)', output)
+			if m is not None:
+				skew = float(m.group(1).rstrip())
+				rotate_angle = skew * -1
+
+				if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 3:
+					rotate_string = 'magick ' + tif_path + ' -background #000000 -rotate ' + str(rotate_angle) + ' +repage ' + rotate_path
+
+					try:
+						subprocess.check_output(rotate_string)
+					except Exception as e:
+						logger.error('Error rotating %s: %s', tif, e)
+					else:
+						logger.info('Rotating %s at %s degrees', tif, rotate_angle)
+
+					try:
+						os.remove(tif_path)
+						os.rename(rotate_path, tif_path)
+					except Exception as e:
+						logger.error('Problem removing or renaming %s: %s', tif, e)
+
+				else:
+					logger.info('No need to deskew %s', tif)
+
+	logger.info('Finished deskewing TIFFs for %s', issue)
 
 
 ###
@@ -150,14 +194,12 @@ def tif_meta(issue):
 		tif_path = issue_path + sep + tif
 		pg_num = tif[13:16]
 
-		exif_string = 'exiftool -m -Title="Bay Area Reporter. (San Francisco, Calif.), ' + date + ', [p ' + pg_num + ']" -Description="Page from Bay Area Reporter" -Subject= -DocumentName=' + LCCN + ' -ImageUniqueID=' + date + '_1_' + pg_num + ' -FileSource=3 -n -Artist="GLBT Historical Society" -Make="Image Access" -Model="Bookeye4 V1-A, SN#BE4-SGS-V1A-00073239BCFD" ' + tif_path
+		exif_string = 'exiftool -m -Title="Bay Area Reporter. (San Francisco, Calif.), ' + date + ', [p ' + pg_num + ']" -Description="Page from Bay Area Reporter" -Subject= -DocumentName=' + LCCN + ' -ImageUniqueID=' + date + '_1_' + pg_num + ' -FileSource="Digital Camera" -Artist="GLBT Historical Society" -Copyright="Benro Enterprises, Inc." -Make="Image Access" -Model="Bookeye4 V1-A, SN#BE4-SGS-V1A-00073239BCFD" ' + tif_path
 
 		try:
 			subprocess.check_output(exif_string)
 		except Exception as e:
 			logger.error('Error running Exiftool on %s: %s', tif, e)
-		else:
-			logger.info('Running Exiftool on %s...', tif)
 
 	logger.info('Finished fixing TIFF tags for %s', issue)
 
@@ -167,8 +209,6 @@ def tif_meta(issue):
 			os.remove(issue_path+sep+original)
 		except Exception as e:
 			logger.error('Could not remove %s: %s', original, e)
-		else:
-			logger.info('Cleaning up... Removed %s', original)
 
 
 
@@ -179,23 +219,21 @@ def derivs(issue):
 	tif_list = issue_meta[issue]['tifs']
 	for tif in tif_list:
 		tif_path = issue_path + sep + tif
-		jpg_path = tif_path.replace('.tif','.jpg')
+		# jpg_path = tif_path.replace('.tif','.jpg')
 		jp2_path = tif_path.replace('.tif','.jp2')
 
 		# Run ImageMagick to create JP2s for each page
 		magick_string_jp2 = 'magick ' + tif_path + ' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:rate=0.125 -define jp2:lazy -define jp2:ilyrrates="1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625" ' + jp2_path
-		magick_string_jpg = 'magick -units PixelsPerInch ' + tif_path + ' -quality 60 -density 300 ' + jpg_path
+		# magick_string_jpg = 'magick -units PixelsPerInch ' + tif_path + ' -quality 60 -density 300 ' + jpg_path
 		
 		try:
 			subprocess.check_output(magick_string_jp2)
 			# subprocess.check_output(magick_string_jpg)
 		except Exception as e:
 			logger.error('Error running Imagemagick on %s: %s', tif, e)
-		else:
-			logger.info('Running Imagemagick on %s...', tif)
 
 	jp2_list = glob.glob1(issue_path,'*.jp2')
-	jpg_list = glob.glob1(issue_path,'*.jpg')
+	# jpg_list = glob.glob1(issue_path,'*.jpg')
 	if len(jp2_list) == len(tif_list):
 		logger.info('Finished with derivs for %s', issue)
 		issue_meta[issue]['derivs'] = 'TRUE'
@@ -226,8 +264,6 @@ def jp2xml(issue):
 					f.write(xml_string)
 			except Exception as e:
 				logger.error('Error writing XML for %s: %s', a_file, e)
-			else:
-				logger.info('Created JP2 XML for %s', a_file)
 			
 			page_num += 1
 
@@ -243,15 +279,14 @@ def jp2xml(issue):
 			subprocess.check_output(exif_string)
 		except Exception as e:
 			logger.error('Error with file %s: %s', a_jp2, e)
-		else:
-			logger.info('Added XML box to %s', a_jp2)
 
 		try:
 			os.remove(jp2xml_filename)
 		except Exception as e:
 			logger.error('Error with file %s: %s', a_jp2, e)
-		else:
-			logger.info('Cleaning up... Removed temp XML file for %s', a_jp2)
+
+	logger.info('Finished with JP2 XML for %s', a_file)
+
 
 
 ###
@@ -268,15 +303,11 @@ def ocr(issue):
 			subprocess.check_output(['tesseract', file_path, ocr_path, 'hocr'])
 		except Exception as e:
 			logger.error('Error running Tesseract on %s: %s', file, e)
-		else:
-			logger.info('Creating HOCR for %s...', file)
 		
 		try:
 			subprocess.check_output(['tesseract', file_path, ocr_path, 'pdf'])
 		except Exception as e:
 			logger.error('Error running Tesseract on %s: %s', file, e)
-		else:
-			logger.info('Creating PDF for %s...', file)
 
 	issue_meta[issue]['ocr'] = 'TRUE'
 	logger.info('Finished OCR on %s', issue)
@@ -297,16 +328,12 @@ def downsample_pdf(issue):
             subprocess.check_output(gs_string_pdf)
         except Exception as e:
             logger.error('Error with file %s: %s', a_pdf, e)
-        else:
-            logger.info('ghostscript is downsampling %s...', a_pdf)
 
         try:
             os.remove(hires_pdf_path)
             os.rename(lowres_pdf_path, hires_pdf_path)
         except Exception as e:
-            logger.error('Error trying to remove and rename file %s: %s', a_pdf, e)
-        else:
-            logger.info('Cleaning up... Removed hi-res PDF and renamed lo-res PDF for %s', a_pdf)
+            logger.error('Problem trying to remove and rename file %s: %s', a_pdf, e)
 
     logger.info('Finished downsampling PDFs for %s', issue)
 
@@ -368,8 +395,6 @@ def hocr2alto(issue):
 			subprocess.check_output(saxon_string)
 		except Exception as e:
 			logger.error('Error transforming %s: %s', hocr, e)
-		else:
-			logger.info('Transformed %s to %s', hocr, xml)
 
 	logger.info('Finished creating ALTO XML for %s', issue)
 
@@ -387,9 +412,6 @@ def to_QC(issue):
 		logger.error('Error moving %s to QC: %s', issue, e)
 	else:
 		logger.info('Cleaning up... Moved %s to QC', issue)
-
-	print 'All done'
-	logger.info('All done')
 
 
 ###
@@ -447,20 +469,27 @@ LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
 issue_meta = get_metadata()
 process_list = process()
-# process_list = ['20050728']
+# process_list = ['20021128']
 
 for issue in process_list:
 	issue_path = source_path + issue
 	
+	logger.info('---------------------------------------------------------')
+	logger.info('Starting to process %s', issue)
+
+	deskew(issue)
 	tif_meta(issue)
 	derivs(issue)
 	jp2xml(issue)
 	ocr(issue)
-	# downsample_pdf(issue)
-	# pdf_merge(issue)
+	downsample_pdf(issue)
+	pdf_merge(issue)
 	hocr2alto(issue)
 	to_QC(issue)
 	update_sheet(issue)
+
+	logger.info('Finished processing %s', issue)
+	logger.info('---------------------------------------------------------')
 
 # to_network()
 
