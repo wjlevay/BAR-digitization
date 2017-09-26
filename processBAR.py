@@ -50,10 +50,10 @@ def get_metadata():
 				issue_no = wks.acell('C' + row).value
 				page_ct = wks.acell('F' + row).value
 				scanned_by = wks.acell('I' + row).value
-				publisher = wks.acell('P' + row).value
-				pg_match = wks.acell('Q' + row).value
-				derivs = wks.acell('R' + row).value
-				ocr = wks.acell('S' + row).value
+				publisher = wks.acell('R' + row).value
+				pg_match = wks.acell('S' + row).value
+				derivs = wks.acell('T' + row).value
+				ocr = wks.acell('U' + row).value
 
 				# Add issue metadata to the issue_meta dict
 				an_issue['vol'] = vol
@@ -95,9 +95,9 @@ def update_sheet(issue):
 		row = str(cell_list[0].row)
 
 		# Update cells in that row
-		wks.update_acell('Q' + row, issue_meta[issue]['pg_match'])
-		wks.update_acell('R' + row, issue_meta[issue]['derivs'])
-		wks.update_acell('S' + row, issue_meta[issue]['ocr'])
+		wks.update_acell('S' + row, issue_meta[issue]['pg_match'])
+		wks.update_acell('T' + row, issue_meta[issue]['derivs'])
+		wks.update_acell('U' + row, issue_meta[issue]['ocr'])
 
 	except Exception as e:
 		logger.error('Could not update Google Sheet for %s: %s', issue, e)
@@ -157,7 +157,7 @@ def deskew(issue):
 				skew = float(m.group(1).rstrip())
 				rotate_angle = skew * -1
 
-				if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 3:
+				if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 1.7:
 					rotate_string = 'magick ' + tif_path + ' -background #000000 -rotate ' + str(rotate_angle) + ' +repage ' + rotate_path
 
 					try:
@@ -217,15 +217,19 @@ def tif_meta(issue):
 ###
 def derivs(issue):
 	tif_list = issue_meta[issue]['tifs']
+	jp2_list = glob.glob1(issue_path,'*.jp2')
+
 	for tif in tif_list:
 		tif_path = issue_path + sep + tif
 		# jpg_path = tif_path.replace('.tif','.jpg')
+		jp2 = tif.replace('.tif','.jp2')
 		jp2_path = tif_path.replace('.tif','.jp2')
 
 		# Run ImageMagick to create JP2s for each page
 		magick_string_jp2 = 'magick ' + tif_path + ' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:rate=0.125 -define jp2:lazy -define jp2:ilyrrates="1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625" ' + jp2_path
 		# magick_string_jpg = 'magick -units PixelsPerInch ' + tif_path + ' -quality 60 -density 300 ' + jpg_path
 		
+		#if jp2 not in jp2_list:
 		try:
 			subprocess.check_output(magick_string_jp2)
 			# subprocess.check_output(magick_string_jpg)
@@ -285,7 +289,7 @@ def jp2xml(issue):
 		except Exception as e:
 			logger.error('Error with file %s: %s', a_jp2, e)
 
-	logger.info('Finished with JP2 XML for %s', a_file)
+	logger.info('Finished with JP2 XML for %s', issue)
 
 
 
@@ -294,16 +298,24 @@ def jp2xml(issue):
 ###
 def ocr(issue):
 	tif_list = issue_meta[issue]['tifs']
+	hocr_list = glob.glob1(issue_path,'*.hocr')
+	pdf_list = glob.glob1(issue_path,'*.pdf')
+
 	for file in tif_list:
 		file_path = issue_path + sep + file
 		ocr_path = file_path.replace('.tif','')
 
 		# Run OCR -- we're creating HOCR and PDF files for each page, which we'll further process later
+
+		# if file.replace('.tif','.hocr') not in hocr_list:
+
 		try:
 			subprocess.check_output(['tesseract', file_path, ocr_path, 'hocr'])
 		except Exception as e:
 			logger.error('Error running Tesseract on %s: %s', file, e)
 		
+		# if file.replace('.tif','.pdf') not in pdf_list:
+
 		try:
 			subprocess.check_output(['tesseract', file_path, ocr_path, 'pdf'])
 		except Exception as e:
@@ -323,6 +335,8 @@ def downsample_pdf(issue):
         hires_pdf_path = issue_path + sep + a_pdf
         lowres_pdf_path = hires_pdf_path.replace('.pdf','_lo.pdf')
         gs_string_pdf = '"C:\\Program Files (x86)\\gs\\gs9.21\\bin\\gswin32c.exe" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dAutoRotatePages=/None -dNOPAUSE -dQUIET -dBATCH -sOutputFile=' + lowres_pdf_path + ' ' + hires_pdf_path
+
+        #if os.path.getsize(hires_pdf_path) < 2000000:
 
         try:
             subprocess.check_output(gs_string_pdf)
@@ -382,6 +396,7 @@ def pdf_merge(issue):
 def hocr2alto(issue):
 	xsl_filename = '..\hOCR-to-ALTO\hocr2alto2.1.xsl'
 	hocr_list = glob.glob1(issue_path,'*.hocr')
+	xml_list = glob.glob1(issue_path,'*.xml')
 
 	# Transform
 	for hocr in hocr_list:
@@ -391,6 +406,7 @@ def hocr2alto(issue):
 		
 		saxon_string = 'java -cp C:\saxon\saxon9he.jar net.sf.saxon.Transform -t -s:' + hocr_filename + ' -xsl:' + xsl_filename + ' -o:' + xml_filename
 
+		#if xml not in xml_list:
 		try:
 			subprocess.check_output(saxon_string)
 		except Exception as e:
@@ -412,26 +428,6 @@ def to_QC(issue):
 		logger.error('Error moving %s to QC: %s', issue, e)
 	else:
 		logger.info('Cleaning up... Moved %s to QC', issue)
-
-
-###
-# Move issues from Complete to network backup
-###
-def to_network():
-	source_path = 'C:\\BAR\\complete\\'
-	backup_path = 'Z:\\BAR\\'
-
-	for root, dirs, files in os.walk(source_path):
-		for issue in dirs:
-			source = source_path+issue
-			destination = backup_path+issue
-
-			try:
-				shutil.move(source, destination)
-			except Exception as e:
-				logger.error('Error moving %s to QC: %s', issue, e)
-			else:
-				logger.info('Cleaning up... Moved %s to Network Drive', issue)
 
 
 
@@ -461,8 +457,13 @@ logger.info('Script started...')
 
 # Constants
 source_path = 'C:\\BAR\\toProcess\\'
-# source_path = 'C:\\Users\\BLevay\\Dropbox\\GLBT\\BARtest\\'
+# source_path = 'C:\\BAR\\toPreprocess\\'
+# source_path = 'C:\\BAR\\toFix\\'
+# source_path = 'Z:\\BAR\\toReprocess\\2004\\'
+
 destination_path = 'C:\\BAR\\toQC\\'
+# destination_path = 'C:\\BAR\\toProcess\\'
+# destination_path = 'Z:\\BAR\\toQC\\'
 sep = '\\'
 
 LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
@@ -490,7 +491,5 @@ for issue in process_list:
 
 	logger.info('Finished processing %s', issue)
 	logger.info('---------------------------------------------------------')
-
-# to_network()
 
 logger.info('ALL DONE')
