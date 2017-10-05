@@ -6,7 +6,8 @@
 # ideally at night or on the weekend, while no one is using the local machine for scanning.
 ###
 
-import logging, glob, os, re, gspread, shutil, subprocess
+import logging, glob, os, re, gspread, shutil, subprocess, datetime
+from lxml import etree
 from PyPDF2 import PdfFileMerger, PdfFileReader
 from oauth2client.service_account import ServiceAccountCredentials
 
@@ -46,9 +47,16 @@ def get_metadata():
 				# Get the row, then get some values in that row
 				row = str(cell_list[0].row)
 
-				vol = wks.acell('B' + row).value
-				issue_no = wks.acell('C' + row).value
+				vol = wks.acell('C' + row).value
+				issue_no = wks.acell('D' + row).value
 				page_ct = wks.acell('F' + row).value
+				sec1_page_ct = wks.acell('K' + row).value
+				sec2_page_ct = wks.acell('L' + row).value
+				sec3_page_ct = wks.acell('M' + row).value
+				sec4_page_ct = wks.acell('N' + row).value
+				sec2_label = wks.acell('O' + row).value
+				sec3_label = wks.acell('P' + row).value
+				sec4_label = wks.acell('Q' + row).value
 				scanned_by = wks.acell('I' + row).value
 				publisher = wks.acell('R' + row).value
 				pg_match = wks.acell('S' + row).value
@@ -59,6 +67,13 @@ def get_metadata():
 				an_issue['vol'] = vol
 				an_issue['issue_no'] = issue_no
 				an_issue['page_count'] = page_ct
+				an_issue['sec1_page_ct'] = sec1_page_ct
+				an_issue['sec2_page_ct'] = sec2_page_ct
+				an_issue['sec3_page_ct'] = sec3_page_ct
+				an_issue['sec4_page_ct'] = sec4_page_ct
+				an_issue['sec2_label'] = sec2_label
+				an_issue['sec3_label'] = sec3_label
+				an_issue['sec4_label'] = sec4_label
 				an_issue['scanned_by'] = scanned_by
 				an_issue['publisher'] = publisher
 				an_issue['pg_match'] = pg_match
@@ -72,6 +87,7 @@ def get_metadata():
 				logger.error('Could not find %s in Google Sheet: %s', issue, e)
 
 	return issue_meta
+
 
 ###
 # Update Google Sheet after processing
@@ -430,6 +446,152 @@ def to_QC(issue):
 		logger.info('Cleaning up... Moved %s to QC', issue)
 
 
+###
+# Create METS XML
+###
+def create_METS(issue):
+
+	output_path = issue_path + sep + 'BAR_' + issue + '.xml'
+
+	vol = issue_meta[issue]['vol']
+	issue_no = issue_meta[issue]['issue_no']
+	page_ct = issue_meta[issue]['page_count']
+	date = issue_meta[issue]['date']
+	timestamp = '{:%Y-%m-%dT%H:%M:%S}'.format(datetime.datetime.now())
+	JP2list = glob.glob1(issue_path,'*.jp2')
+
+	sec1_label = ''
+	sec2_label = issue_meta[issue]['sec2_label'].replace('&','&amp;')
+	sec3_label = issue_meta[issue]['sec3_label']
+	sec4_label = issue_meta[issue]['sec4_label']
+
+	sec1_page_range = issue_meta[issue]['sec1_page_ct'].split('-')
+	sec2_page_range = issue_meta[issue]['sec2_page_ct'].split('-')
+	sec3_page_range = issue_meta[issue]['sec3_page_ct'].split('-')
+	sec4_page_range = issue_meta[issue]['sec4_page_ct'].split('-')
+
+	#parse sections
+	sec1_start = sec1_page_range[0]
+	sec1_end = sec1_page_range[1]
+
+	if sec2_page_range != ['']:
+		sec2_start = sec2_page_range[0]
+		sec2_end = sec2_page_range[1]
+
+	if sec3_page_range != ['']:
+		sec3_start = sec3_page_range[0]
+		sec3_end = sec3_page_range[1]
+
+	if sec4_page_range != ['']:
+		sec4_start = sec4_page_range[0]
+		sec4_end = sec4_page_range[1]
+
+	count = 1
+	pages = {}
+	sections = {}
+	while count <= int(page_ct):
+		page = {}
+		if count >= int(sec1_start) and count <= int(sec1_end):
+			sections['1'] = sec1_label
+			page['sec_num'] = '1'
+			page['sec_label'] = sec1_label
+		elif sec2_start is not None and count >= int(sec2_start) and count <= int(sec2_end):
+			sections['2'] = sec2_label
+			page['sec_num'] = '2'
+			page['sec_label'] = sec2_label
+		elif sec3_start is not None and count >= int(sec3_start) and count <= int(sec3_end):
+			sections['3'] = sec3_label
+			page['sec_num'] = '3'
+			page['sec_label'] = sec3_label
+		elif sec4_start is not None and count >= int(sec4_start) and count <= int(sec4_end):
+			sections['4'] = sec4_label
+			page['sec_num'] = '4'
+			page['sec_label'] = sec4_label
+
+		pages[str(count)] = page
+		count += 1
+
+	mets_open = '<mets TYPE="urn:library-of-congress:ndnp:mets:newspaper:issue" PROFILE="urn:library-of-congress:mets:profiles:ndnp:issue:v1.5" LABEL="Bay area reporter (San Francisco, Calif. : 1971), ' + date + '" xmlns:mix="http://www.loc.gov/mix/" xmlns:ndnp="http://www.loc.gov/ndnp" xmlns:premis="http://www.loc.gov/standards/premis" xmlns:mods="http://www.loc.gov/mods/v3" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:dsig="http://www.w3.org/2000/09/xmldsig#" xmlns="http://www.loc.gov/METS/">'
+	metsHdr = '<metsHdr CREATEDATE="' + timestamp + '"><agent ROLE="CREATOR" TYPE="ORGANIZATION"><name>GLBT Historical Society</name></agent></metsHdr>'
+	issueMODS = '<dmdSec ID="issueModsBib"><mdWrap MDTYPE="MODS" LABEL="Issue metadata"><xmlData><mods:mods><mods:relatedItem type="host"><mods:identifier type="lccn">sn92019460</mods:identifier><mods:part><mods:detail type="volume"><mods:number>' + vol + '</mods:number></mods:detail><mods:detail type="issue"><mods:number>' + issue_no + '</mods:number></mods:detail><mods:detail type="edition"><mods:number>1</mods:number></mods:detail></mods:part></mods:relatedItem><mods:originInfo><mods:dateIssued encoding="iso8601">' + date + '</mods:dateIssued></mods:originInfo><mods:note type="noteAboutReproduction">Present</mods:note></mods:mods></xmlData></mdWrap></dmdSec>'
+	xml_string = mets_open + metsHdr + issueMODS
+
+	count = 1
+	for section in sections:
+		sec_num = str(count)
+		if count > 1:
+			separator = ': '
+		else:
+			separator = ''
+
+		sectionMODS = '<dmdSec ID="sectionModsBib' + sec_num + '"><mdWrap MDTYPE="MODS" LABEL="Section metadata"><xmlData><mods:mods><mods:part><mods:detail type="section label"><mods:number>Section ' + sec_num + ' of ' + str(len(sections)) + separator + sections[sec_num] + '</mods:number></mods:detail></mods:part></mods:mods></xmlData></mdWrap></dmdSec>'
+		xml_string += sectionMODS
+		count += 1
+
+	count = 1
+	for page in pages:
+		pg_num = str(count)
+		page_MODS = '<dmdSec ID="pageModsBib' + pg_num + '"><mdWrap MDTYPE="MODS" LABEL="Page metadata"><xmlData><mods:mods><mods:part><mods:extent unit="pages"><mods:start>' + pg_num + '</mods:start></mods:extent><mods:detail type="page number"><mods:number>' + pg_num + '</mods:number></mods:detail></mods:part><mods:relatedItem type="original"><mods:physicalDescription><mods:form type="print" /></mods:physicalDescription><mods:location><mods:physicalLocation authority="marcorg" displayLabel="GLBT Historical Society">casfglbt</mods:physicalLocation></mods:location></mods:relatedItem><mods:note type="agencyResponsibleForReproduction" displayLabel="GLBT Historical Society">casfglbt</mods:note><mods:note type="noteAboutReproduction">Present</mods:note></mods:mods></xmlData></mdWrap></dmdSec>'
+		xml_string += page_MODS
+		count += 1
+
+	amdSec = '<amdSec><!--TECHNICAL METADATA.--><!--All technical metadata is added by trusted validator--></amdSec>'
+	xml_string += amdSec
+
+	fileSec_open = '<fileSec>'
+	xml_string += fileSec_open
+
+	count = 1
+	for page in pages:
+		pg_num = str(count)
+		pg_dig = str("%03d" % (count,))
+		JP2path = 'BAR_' + issue + '_' + pg_dig + '.jp2'
+		PDFpath = JP2path.replace('.jp2','.pdf')
+		XMLpath = JP2path.replace('.jp2','.xml')
+
+		fileSec_page = '<fileGrp ID="pageFileGrp' + pg_num + '"><file ID="serviceFile' + pg_num + '" USE="service" ADMID="primaryServicePremis' + pg_num + ' primaryServiceMix' + pg_num + '"><FLocat LOCTYPE="OTHER" OTHERLOCTYPE="file" xlink:href="' + JP2path + '" /></file><file ID="otherDerivativeFile' + pg_num + '" USE="derivative" ADMID="otherDerivativePremis' + pg_num + '"><FLocat LOCTYPE="OTHER" OTHERLOCTYPE="file" xlink:href="' + PDFpath + '" /></file><file ID="ocrFile' + pg_num + '" USE="ocr" ADMID="ocrTextPremis' + pg_num + '"><FLocat LOCTYPE="OTHER" OTHERLOCTYPE="file" xlink:href="' + XMLpath + '" /></file></fileGrp>'
+		xml_string += fileSec_page
+		count += 1
+	
+	fileSec_close = '</fileSec>'
+	xml_string += fileSec_close
+
+	structMap_open = '<structMap xmlns:np="urn:library-of-congress:ndnp:mets:newspaper"><div TYPE="np:issue" DMDID="issueModsBib">'
+	xml_string += structMap_open
+
+	count = 1
+	for page in pages:
+		pg_num = str(count)
+		next_page = str(count+1)
+		prev_page = str(count-1)
+		if count > 1 and pages[pg_num]['sec_label'] == pages[prev_page]['sec_label']:
+			structMap_sect = ''
+		else:
+			structMap_sect = '<div TYPE="np:section" DMDID="sectionModsBib' + pages[pg_num]['sec_num'] + '">'
+
+		structMap_page = '<div TYPE="np:page" DMDID="pageModsBib' + pg_num + '"><fptr FILEID="serviceFile' + pg_num + '" /><fptr FILEID="otherDerivativeFile' + pg_num + '" /><fptr FILEID="ocrFile' + pg_num + '" /></div>'
+		
+		if count < len(pages) and pages[pg_num]['sec_label'] == pages[next_page]['sec_label']:
+			structMap_sect_close = ''
+		else:
+			structMap_sect_close = '</div>'
+
+		xml_string += structMap_sect + structMap_page + structMap_sect_close
+		count += 1
+
+	structMap_close = '</div></structMap>'
+	mets_close = '</mets>'
+	xml_string += structMap_close + mets_close
+
+	# serialize the string to XML
+	tree = etree.fromstring(xml_string)
+
+	# write out to METS XML file
+	with open(output_path, 'wb') as f:
+		f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+		f.write(etree.tostring(tree, pretty_print = True))
+	logger.info('Created METS XML for %s', issue)
+
 
 ###
 # Start processing
@@ -457,20 +619,15 @@ logger.info('Script started...')
 
 # Constants
 source_path = 'C:\\BAR\\toProcess\\'
-# source_path = 'C:\\BAR\\toPreprocess\\'
-# source_path = 'C:\\BAR\\toFix\\'
-# source_path = 'Z:\\BAR\\toReprocess\\2004\\'
 
 destination_path = 'C:\\BAR\\toQC\\'
-# destination_path = 'C:\\BAR\\toProcess\\'
-# destination_path = 'Z:\\BAR\\toQC\\'
+
 sep = '\\'
 
 LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
 issue_meta = get_metadata()
 process_list = process()
-# process_list = ['20021128']
 
 for issue in process_list:
 	issue_path = source_path + issue
@@ -478,6 +635,7 @@ for issue in process_list:
 	logger.info('---------------------------------------------------------')
 	logger.info('Starting to process %s', issue)
 
+	create_METS(issue)
 	deskew(issue)
 	tif_meta(issue)
 	derivs(issue)
