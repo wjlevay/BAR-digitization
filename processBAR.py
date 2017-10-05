@@ -422,11 +422,17 @@ def hocr2alto(issue):
 		
 		saxon_string = 'java -cp C:\saxon\saxon9he.jar net.sf.saxon.Transform -t -s:' + hocr_filename + ' -xsl:' + xsl_filename + ' -o:' + xml_filename
 
-		#if xml not in xml_list:
+		# if xml not in xml_list:
 		try:
 			subprocess.check_output(saxon_string)
 		except Exception as e:
 			logger.error('Error transforming %s: %s', hocr, e)
+
+		# remove HOCR
+		try:
+            os.remove(hocr_filename)
+        except Exception as e:
+            logger.error('Problem trying to remove file %s: %s', hocr, e)
 
 	logger.info('Finished creating ALTO XML for %s', issue)
 
