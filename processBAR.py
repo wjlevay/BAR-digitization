@@ -55,14 +55,15 @@ def get_metadata():
 				sec2_page_ct = wks.acell('L' + row).value
 				sec3_page_ct = wks.acell('M' + row).value
 				sec4_page_ct = wks.acell('N' + row).value
-				sec2_label = wks.acell('O' + row).value
-				sec3_label = wks.acell('P' + row).value
-				sec4_label = wks.acell('Q' + row).value
+				sec1_label = wks.acell('O' + row).value
+				sec2_label = wks.acell('P' + row).value
+				sec3_label = wks.acell('Q' + row).value
+				sec4_label = wks.acell('R' + row).value
 				scanned_by = wks.acell('I' + row).value
-				publisher = wks.acell('R' + row).value
-				pg_match = wks.acell('S' + row).value
-				derivs = wks.acell('T' + row).value
-				ocr = wks.acell('U' + row).value
+				publisher = wks.acell('S' + row).value
+				pg_match = wks.acell('T' + row).value
+				derivs = wks.acell('U' + row).value
+				ocr = wks.acell('V' + row).value
 
 				# Add issue metadata to the issue_meta dict
 				an_issue['vol'] = vol
@@ -72,6 +73,7 @@ def get_metadata():
 				an_issue['sec2_page_ct'] = sec2_page_ct
 				an_issue['sec3_page_ct'] = sec3_page_ct
 				an_issue['sec4_page_ct'] = sec4_page_ct
+				an_issue['sec1_label'] = sec1_label
 				an_issue['sec2_label'] = sec2_label
 				an_issue['sec3_label'] = sec3_label
 				an_issue['sec4_label'] = sec4_label
@@ -112,9 +114,9 @@ def update_sheet(issue):
 		row = str(cell_list[0].row)
 
 		# Update cells in that row
-		wks.update_acell('S' + row, issue_meta[issue]['pg_match'])
-		wks.update_acell('T' + row, issue_meta[issue]['derivs'])
-		wks.update_acell('U' + row, issue_meta[issue]['ocr'])
+		wks.update_acell('T' + row, issue_meta[issue]['pg_match'])
+		wks.update_acell('U' + row, issue_meta[issue]['derivs'])
+		wks.update_acell('V' + row, issue_meta[issue]['ocr'])
 
 	except Exception as e:
 		logger.error('Could not update Google Sheet for %s: %s', issue, e)
@@ -154,7 +156,6 @@ def process():
 # Deskew TIFFs
 ###
 def deskew(issue):
-	# tif_list = issue_meta[issue]['tifs']
 	tif_list = glob.glob1(issue_path,'*.tif')
 
 	for tif in tif_list:
@@ -457,7 +458,7 @@ def to_QC(issue):
 ###
 def create_METS(issue):
 	
-	xml = 'BAR_' + issue + '.xml'
+	xml = 'BAR_' + issue + '_mets.xml'
 	output_path = issue_path + sep + xml
 	xml_list = glob.glob1(issue_path,'*.xml')
 
@@ -472,7 +473,7 @@ def create_METS(issue):
 			timestamp = '{:%Y-%m-%dT%H:%M:%S}'.format(datetime.datetime.now())
 			JP2list = glob.glob1(issue_path,'*.jp2')
 
-			sec1_label = ''
+			sec1_label = escape(issue_meta[issue]['sec1_label'])
 			sec2_label = escape(issue_meta[issue]['sec2_label'])
 			sec3_label = escape(issue_meta[issue]['sec3_label'])
 			sec4_label = escape(issue_meta[issue]['sec4_label'])
@@ -622,20 +623,23 @@ def to_archive():
 	source_path = 'C:\\BAR\\toArchive\\'
 	backup_path = 'F:\\Dropbox (GLBTHS)\\Archive\\BAR\\'
 
+	logger.info('Let\'s move completed issues to Archive')
 	for root, dirs, files in os.walk(source_path):
 		for dir in dirs:
 			issue = dir
 			issue_path = os.path.join(root, dir)
 
-			year = issue[1:4]
+			year = issue[0:4]
 			destination = backup_path + year + sep + issue
 
-	try:
-		shutil.move(issue_path, destination)
-	except Exception as e:
-		logger.error('Error moving %s to QC: %s', issue, e)
+			try:
+				logger.info('Trying to move %s to Archive...', issue)
+				shutil.move(issue_path, destination)
+				logger.info('Moved %s to Archive', issue)
+			except Exception as e:
+				logger.error('Error moving %s to Archive: %s', issue, e)
 
-	logger.info('Cleaning up... Moved %s to Network Drive', issue)
+	logger.info('Moved issues to Archive')
 
 
 ###
@@ -673,7 +677,7 @@ LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
 issue_meta = get_metadata()
 process_list = process()
-# process_list = ['20010510']
+# process_list = ['20021024']
 
 for issue in process_list:
 	issue_path = source_path + issue
