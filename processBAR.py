@@ -64,6 +64,7 @@ def get_metadata():
 				pg_match = wks.acell('T' + row).value
 				derivs = wks.acell('U' + row).value
 				ocr = wks.acell('V' + row).value
+				no_rotate = wks.acell('Z' + row).value
 
 				# Add issue metadata to the issue_meta dict
 				an_issue['vol'] = vol
@@ -82,6 +83,7 @@ def get_metadata():
 				an_issue['pg_match'] = pg_match
 				an_issue['derivs'] = derivs
 				an_issue['ocr'] = ocr
+				an_issue['no_rotate'] = no_rotate.split(',')
 				an_issue['date'] = issue[0:4] + '-' + issue[4:6] + '-' + issue[6:8]
 
 				issue_meta[issue] = an_issue
@@ -157,42 +159,54 @@ def process():
 ###
 def deskew(issue):
 	tif_list = glob.glob1(issue_path,'*.tif')
+	
+	if issue_meta[issue]['no_rotate'] is not None:
+		no_rotate_list = issue_meta[issue]['no_rotate']
+	else:
+		no_rotate_list = []
 
 	for tif in tif_list:
-		tif_path = issue_path + sep + tif
-		rotate_path = tif_path.replace('.tif','_rotate.tif')
+		pg_num = tif[13:16]
 
-		find_angle = 'deskew -l 80 ' + tif_path
+		if pg_num not in no_rotate_list:
 
-		try:
-			output = subprocess.check_output(find_angle, stderr=subprocess.STDOUT)
-		except Exception as e:
-			logger.error('Error running Deskew on %s: %s', tif, e)
+			tif_path = issue_path + sep + tif
+			rotate_path = tif_path.replace('.tif','_rotate.tif')
 
-		if output is not None:
-			m = re.search('Skew angle found: (.*)', output)
-			if m is not None:
-				skew = float(m.group(1).rstrip())
-				rotate_angle = skew * -1
+			find_angle = 'deskew -l 80 ' + tif_path
 
-				if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 1.7:
-					rotate_string = 'magick ' + tif_path + ' -background #000000 -rotate ' + str(rotate_angle) + ' +repage ' + rotate_path
+			try:
+				output = subprocess.check_output(find_angle, stderr=subprocess.STDOUT)
+			except Exception as e:
+				logger.error('Error running Deskew on %s: %s', tif, e)
 
-					try:
-						subprocess.check_output(rotate_string)
-					except Exception as e:
-						logger.error('Error rotating %s: %s', tif, e)
+			if output is not None:
+				m = re.search('Skew angle found: (.*)', output)
+				if m is not None:
+					skew = float(m.group(1).rstrip())
+					rotate_angle = skew * -1
+
+					if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 1.25:
+						rotate_string = 'magick ' + tif_path + ' -background #000000 -rotate ' + str(rotate_angle) + ' +repage ' + rotate_path
+
+						try:
+							subprocess.check_output(rotate_string)
+						except Exception as e:
+							logger.error('Error rotating %s: %s', tif, e)
+						else:
+							logger.info('Rotating %s at %s degrees', tif, rotate_angle)
+
+						try:
+							os.remove(tif_path)
+							os.rename(rotate_path, tif_path)
+						except Exception as e:
+							logger.error('Problem removing or renaming %s: %s', tif, e)
+
 					else:
-						logger.info('Rotating %s at %s degrees', tif, rotate_angle)
+						logger.info('No need to deskew %s', tif)
 
-					try:
-						os.remove(tif_path)
-						os.rename(rotate_path, tif_path)
-					except Exception as e:
-						logger.error('Problem removing or renaming %s: %s', tif, e)
-
-				else:
-					logger.info('No need to deskew %s', tif)
+		else:
+			logger.info('Skipping %s as per spreadsheet', tif)
 
 	logger.info('Finished deskewing TIFFs for %s', issue)
 
@@ -653,7 +667,6 @@ logger.setLevel(logging.INFO)
 
 # create a file handler
 handler = logging.FileHandler('processBAR.log')
-# handler = logging.FileHandler('processBARtest.log')
 handler.setLevel(logging.INFO)
 
 # create a logging format
@@ -677,7 +690,6 @@ LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
 issue_meta = get_metadata()
 process_list = process()
-# process_list = ['20021024']
 
 for issue in process_list:
 	issue_path = source_path + issue
@@ -703,3 +715,4 @@ for issue in process_list:
 to_archive()
 
 logger.info('ALL DONE')
+logger.info('---------------------------------------------------------')
