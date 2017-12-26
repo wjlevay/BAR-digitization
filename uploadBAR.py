@@ -35,6 +35,7 @@ def get_metadata(issue):
 
 		vol = wks.acell('C' + row).value
 		issue_no = wks.acell('D' + row).value
+		page_ct = wks.acell('F' + row).value
 		publisher = wks.acell('S' + row).value
 		ia_upload = wks.acell('W' + row).value
 
@@ -47,6 +48,7 @@ def get_metadata(issue):
 		# Add issue metadata to the issue_meta dict
 		issue_meta['vol'] = vol
 		issue_meta['issue_no'] = issue_no
+		issue_meta['page_ct'] = page_ct
 		issue_meta['publisher'] = publisher
 		issue_meta['date'] = date
 		issue_meta['datetext'] = datetext
@@ -129,13 +131,15 @@ def zip(issue):
 	zf.close()
 	print 'Created zipfile for', issue
 
+	#TO DO: confirm zipfile has same number of files as pages in spreadsheet
+
 
 ###
 # Upload to IA
 ###
 def upload(issue):
 
-	ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:opensource"'.format(issue_meta['ia_id'], zip_path, issue_meta['ia_title'], issue_meta['date'], issue_meta['publisher'])
+	ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:opensource" -m "language:English" -m imagecount:{}'.format(issue_meta['ia_id'], zip_path, issue_meta['ia_title'], issue_meta['date'], issue_meta['publisher'], issue_meta['page_ct'])
 
 	try:
 		print 'Uploading...'
@@ -145,6 +149,8 @@ def upload(issue):
 	except Exception as e:
 		print e
 		pass
+
+	# TO DO: confirm upload before deleting zipfile
 
 	try:
 		os.remove(zip_path)
@@ -158,10 +164,9 @@ def upload(issue):
 ###
 # Start processing
 ###
-source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\2005\\'
+source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\2003\\'
 
 process_list = process()
-# process_list = ['20050106']
 
 for issue in process_list:
 	issue_path = source_path + issue
@@ -173,6 +178,9 @@ for issue in process_list:
 		zip(issue)
 		upload(issue)
 		update_sheet(issue)
+		print 'Finished with', issue, '- moving on to next issue.'
 
 	else:
 		print issue, 'was already uploaded to IA. Moving to next issue.'
+
+print 'All done!'
