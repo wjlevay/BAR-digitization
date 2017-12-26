@@ -13,7 +13,7 @@ from PyPDF2 import PdfFileMerger, PdfFileReader
 from oauth2client.service_account import ServiceAccountCredentials
 
 ###
-# Get issue metadata and create a list of issues to process
+# Get issue metadata from Google Sheet
 ###
 def get_metadata():
 	# Google Sheet setup
@@ -368,8 +368,6 @@ def downsample_pdf(issue):
         lowres_pdf_path = hires_pdf_path.replace('.pdf','_lo.pdf')
         gs_string_pdf = '"C:\\Program Files (x86)\\gs\\gs9.21\\bin\\gswin32c.exe" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dAutoRotatePages=/None -dNOPAUSE -dQUIET -dBATCH -sOutputFile=' + lowres_pdf_path + ' ' + hires_pdf_path
 
-        #if os.path.getsize(hires_pdf_path) < 2000000:
-
         try:
             subprocess.check_output(gs_string_pdf)
         except Exception as e:
@@ -631,11 +629,22 @@ def create_METS(issue):
 
 
 ###
+# Upload QC'd issues to Internet Archive
+###
+def to_IA():
+	source_path = 'C:\\BAR\\toArchive\\'
+	
+	logger.info('Let\'s upload completed issues to the Internet Archive')
+
+
+
+
+###
 # Move QC'd issues to backup
 ###
 def to_archive():
 	source_path = 'C:\\BAR\\toArchive\\'
-	backup_path = 'F:\\Dropbox (GLBTHS)\\Archive\\BAR\\'
+	backup_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\'
 
 	logger.info('Let\'s move completed issues to Archive')
 	for root, dirs, files in os.walk(source_path):
@@ -690,6 +699,7 @@ LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
 issue_meta = get_metadata()
 process_list = process()
+# process_list = ['19970306']
 
 for issue in process_list:
 	issue_path = source_path + issue
@@ -712,6 +722,7 @@ for issue in process_list:
 	logger.info('Finished processing %s', issue)
 	logger.info('---------------------------------------------------------')
 
+# to_IA()
 to_archive()
 
 logger.info('ALL DONE')
