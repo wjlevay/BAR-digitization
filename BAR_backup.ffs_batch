@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FreeFileSync XmlFormat="8" XmlType="BATCH">
+    <MainConfig>
+        <Comparison>
+            <Variant>TimeAndSize</Variant>
+            <Symlinks>Exclude</Symlinks>
+            <IgnoreTimeShift/>
+        </Comparison>
+        <SyncConfig>
+            <Variant>Mirror</Variant>
+            <DetectMovedFiles>false</DetectMovedFiles>
+            <DeletionPolicy>Permanent</DeletionPolicy>
+            <VersioningFolder Style="Replace"/>
+        </SyncConfig>
+        <GlobalFilter>
+            <Include>
+                <Item>*</Item>
+            </Include>
+            <Exclude>
+                <Item>\System Volume Information\</Item>
+                <Item>\$Recycle.Bin\</Item>
+                <Item>\RECYCLER\</Item>
+                <Item>\RECYCLED\</Item>
+                <Item>*\desktop.ini</Item>
+                <Item>*\thumbs.db</Item>
+            </Exclude>
+            <TimeSpan Type="None">0</TimeSpan>
+            <SizeMin Unit="None">0</SizeMin>
+            <SizeMax Unit="None">0</SizeMax>
+        </GlobalFilter>
+        <FolderPairs>
+            <Pair>
+                <Left>G:\Dropbox (GLBTHS)\Archive\BAR</Left>
+                <Right>F:\BAR</Right>
+            </Pair>
+        </FolderPairs>
+        <IgnoreErrors>false</IgnoreErrors>
+        <PostSyncCommand Condition="Completion"/>
+    </MainConfig>
+    <BatchConfig>
+        <ErrorDialog>Show</ErrorDialog>
+        <PostSyncAction>Summary</PostSyncAction>
+        <RunMinimized>true</RunMinimized>
+        <LogfileFolder Limit="-1">BAR_backup</LogfileFolder>
+    </BatchConfig>
+</FreeFileSync>
