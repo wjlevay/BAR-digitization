@@ -2,7 +2,7 @@
 # GLBT Historical Society
 # BAR Digitization Project -- Upload to Internet Archive
 # This script creates a temporary zipfile of TIFFs for an issue of the BAR,
-# gathers metadata from our project spreadsheet in a dictionary, and uploads
+# gathers metadata from our project Google Sheet to a dictionary, and uploads
 # the package to the Internet Archive.
 # by Bill Levay
 ###
@@ -25,6 +25,7 @@ def get_metadata(issue):
 	# Open spreadsheet and worksheet
 	sh = gc.open_by_key('1tZjpKZfkGsuUD1iEx_blclJiNQBcfiGhkdXPn9voYGo')
 	wks = sh.worksheet('itemList')
+	print 'Getting metadata from Google Sheet...'
 
 	# Find cell by finding issue date in Sheet
 	try:
@@ -139,7 +140,8 @@ def zip(issue):
 ###
 def upload(issue):
 
-	ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:opensource" -m "language:English" -m imagecount:{}'.format(issue_meta['ia_id'], zip_path, issue_meta['ia_title'], issue_meta['date'], issue_meta['publisher'], issue_meta['page_ct'])
+	# create a command-line string to run as a subprocess
+	ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:bayareareporter" -m "language:English"'.format(issue_meta['ia_id'], zip_path, issue_meta['ia_title'], issue_meta['date'], issue_meta['publisher'])
 
 	try:
 		print 'Uploading...'
@@ -152,6 +154,7 @@ def upload(issue):
 
 	# TO DO: confirm upload before deleting zipfile
 
+	# delete zip
 	try:
 		os.remove(zip_path)
 		print 'Removed', zip_path
@@ -164,7 +167,7 @@ def upload(issue):
 ###
 # Start processing
 ###
-source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\2003\\'
+source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\2001\\'
 
 process_list = process()
 
@@ -172,6 +175,7 @@ for issue in process_list:
 	issue_path = source_path + issue
 	issue_meta = get_metadata(issue)
 
+	# check to make sure we didn't already upload this one
 	if issue_meta['ia_upload'] == '':
 
 		zip_path = '{}\\{}_images.zip'.format(issue_path, issue_meta['ia_id'])
