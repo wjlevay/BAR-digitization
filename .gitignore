@@ -60,3 +60,4 @@ temp.txt
 ia.ini
 fix.csv
 fix.txt
+*.pyc
