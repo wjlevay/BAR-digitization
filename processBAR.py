@@ -6,11 +6,15 @@
 # ideally at night or on the weekend, while no one is using the local machine for scanning.
 ###
 
-import logging, glob, os, re, gspread, shutil, subprocess, datetime
+import logging, glob, os, re, gspread, shutil, subprocess, datetime, zipfile
+import uploadBAR, rotatecrop
 from lxml import etree
 from xml.sax.saxutils import escape
 from PyPDF2 import PdfFileMerger, PdfFileReader
 from oauth2client.service_account import ServiceAccountCredentials
+import math
+import cv2
+import numpy as np
 
 ###
 # Get issue metadata from Google Sheet
@@ -160,14 +164,17 @@ def process():
 def deskew(issue):
 	tif_list = glob.glob1(issue_path,'*.tif')
 	
+	# did the scanner operator flag some pages as potentially confusing to deskew?
 	if issue_meta[issue]['no_rotate'] is not None:
 		no_rotate_list = issue_meta[issue]['no_rotate']
 	else:
 		no_rotate_list = []
 
+	# grab the page number from the file name and see whether it's on the no-rotate list
 	for tif in tif_list:
 		pg_num = tif[13:16]
 
+		# not on the list? let's find the angle
 		if pg_num not in no_rotate_list:
 
 			tif_path = issue_path + sep + tif
@@ -180,17 +187,40 @@ def deskew(issue):
 			except Exception as e:
 				logger.error('Error running Deskew on %s: %s', tif, e)
 
+			# get the angle from the output
 			if output is not None:
 				m = re.search('Skew angle found: (.*)', output)
 				if m is not None:
 					skew = float(m.group(1).rstrip())
-					rotate_angle = skew * -1
+					rotate_angle = skew
 
+					# set our min and max rotation angles
 					if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 1.25:
-						rotate_string = 'magick ' + tif_path + ' -background #000000 -rotate ' + str(rotate_angle) + ' +repage ' + rotate_path
+
+						# make a copy of the original tif just in case
+						backup_tif = issue_path + sep + tif.replace('.tif','_orig.tif')
+						shutil.copy2(tif_path, backup_tif)
+
+						# rotate!
+						# method from https://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders/16778797
 
 						try:
-							subprocess.check_output(rotate_string)
+							image = cv2.imread(tif_path)
+							i = rotate_angle
+							image_height, image_width = image.shape[0:2]
+							image_orig = np.copy(image)
+							image_rotated = rotatecrop.rotate_image(image, i)
+							image_rotated_cropped = rotatecrop.crop_around_center(
+							    image_rotated,
+							    *rotatecrop.largest_rotated_rect(
+							        image_width,
+							        image_height,
+							        math.radians(i)
+							    )
+							)
+
+							cv2.imwrite(rotate_path, image_rotated_cropped)
+
 						except Exception as e:
 							logger.error('Error rotating %s: %s', tif, e)
 						else:
@@ -253,23 +283,19 @@ def derivs(issue):
 
 	for tif in tif_list:
 		tif_path = issue_path + sep + tif
-		# jpg_path = tif_path.replace('.tif','.jpg')
 		jp2 = tif.replace('.tif','.jp2')
 		jp2_path = tif_path.replace('.tif','.jp2')
 
 		# Run ImageMagick to create JP2s for each page
 		magick_string_jp2 = 'magick ' + tif_path + ' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:rate=0.125 -define jp2:lazy -define jp2:ilyrrates="1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625" ' + jp2_path
-		# magick_string_jpg = 'magick -units PixelsPerInch ' + tif_path + ' -quality 60 -density 300 ' + jpg_path
 		
 		#if jp2 not in jp2_list:
 		try:
 			subprocess.check_output(magick_string_jp2)
-			# subprocess.check_output(magick_string_jpg)
 		except Exception as e:
 			logger.error('Error running Imagemagick on %s: %s', tif, e)
 
 	jp2_list = glob.glob1(issue_path,'*.jp2')
-	# jpg_list = glob.glob1(issue_path,'*.jpg')
 	if len(jp2_list) == len(tif_list):
 		logger.info('Finished with derivs for %s', issue)
 		issue_meta[issue]['derivs'] = 'TRUE'
@@ -627,7 +653,6 @@ def create_METS(issue):
 	else:
 		logger.info('METS XML already exists!')
 
-
 ###
 # Upload QC'd issues to Internet Archive
 ###
@@ -635,8 +660,29 @@ def to_IA():
 	source_path = 'C:\\BAR\\toArchive\\'
 	
 	logger.info('Let\'s upload completed issues to the Internet Archive')
+	for root, dirs, files in os.walk(source_path):
 
+		# by now we've QCed the issue, so we can remove those "orig" tiffs
+		for file in files:
+			if '_orig.tif' in file:
+				os.remove(file)
 
+		for dir in dirs:
+			issue = dir
+			issue_path = os.path.join(root, dir)
+			ia_meta = uploadBAR.get_metadata(issue)
+
+			# check to make sure we didn't already upload this one
+			if ia_meta['ia_upload'] == '':
+
+				zip_path = '{}\\{}_images.zip'.format(source_path, issue_meta['ia_id'])
+				uploadBAR.zip(issue)
+				uploadBAR.upload(issue)
+				uploadBAR.update_sheet(issue)
+				logger.info('Finished with %s -- moving on to next issue.', issue)
+
+			else:
+				loger.info('%s was already uploaded to IA. Moving to next issue.', issue)
 
 
 ###
@@ -648,6 +694,12 @@ def to_archive():
 
 	logger.info('Let\'s move completed issues to Archive')
 	for root, dirs, files in os.walk(source_path):
+
+		# by now we've QCed the issue, so we can remove those "orig" tiffs
+		for file in files:
+			if '_orig.tif' in file:
+				os.remove(file)
+
 		for dir in dirs:
 			issue = dir
 			issue_path = os.path.join(root, dir)
@@ -699,7 +751,6 @@ LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
 issue_meta = get_metadata()
 process_list = process()
-# process_list = ['19970306']
 
 for issue in process_list:
 	issue_path = source_path + issue
@@ -708,7 +759,7 @@ for issue in process_list:
 	logger.info('Starting to process %s', issue)
 
 	create_METS(issue)
-	deskew(issue)
+	# deskew(issue)
 	tif_meta(issue)
 	derivs(issue)
 	jp2xml(issue)
@@ -722,7 +773,7 @@ for issue in process_list:
 	logger.info('Finished processing %s', issue)
 	logger.info('---------------------------------------------------------')
 
-# to_IA()
+to_IA()
 to_archive()
 
 logger.info('ALL DONE')
