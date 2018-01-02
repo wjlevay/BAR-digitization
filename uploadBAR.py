@@ -167,24 +167,32 @@ def upload(issue):
 ###
 # Start processing
 ###
-source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\2001\\'
 
-process_list = process()
+if __name__ == "__main__":
+	years = []
 
-for issue in process_list:
-	issue_path = source_path + issue
-	issue_meta = get_metadata(issue)
+	for year in years:
 
-	# check to make sure we didn't already upload this one
-	if issue_meta['ia_upload'] == '':
+		source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\{}\\'.format(year)
 
-		zip_path = '{}\\{}_images.zip'.format(issue_path, issue_meta['ia_id'])
-		zip(issue)
-		upload(issue)
-		update_sheet(issue)
-		print 'Finished with', issue, '- moving on to next issue.'
+		process_list = process()
 
-	else:
-		print issue, 'was already uploaded to IA. Moving to next issue.'
+		for issue in process_list:
+			issue_path = source_path + issue
+			issue_meta = get_metadata(issue)
 
-print 'All done!'
+			# check to make sure we didn't already upload this one
+			if issue_meta['ia_upload'] == '':
+
+				zip_path = 'G:\\{}_images.zip'.format(issue_meta['ia_id'])
+				zip(issue)
+				upload(issue)
+				update_sheet(issue)
+				print 'Finished with', issue, '- moving on to next issue.'
+
+			else:
+				print issue, 'was already uploaded to IA. Moving to next issue.'
+
+		print 'Finished with', year, '- moving on...'
+		
+	print 'ALL DONE'
