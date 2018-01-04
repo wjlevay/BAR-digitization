@@ -93,7 +93,7 @@ def get_metadata():
 				issue_meta[issue] = an_issue
 
 			except Exception as e:
-				logger.error('Could not find %s in Google Sheet: %s', issue, e)
+				logger.error('Could not find issue in Google Sheet: %s', e)
 
 	return issue_meta
 
@@ -125,7 +125,7 @@ def update_sheet(issue):
 		wks.update_acell('V' + row, issue_meta[issue]['ocr'])
 
 	except Exception as e:
-		logger.error('Could not update Google Sheet for %s: %s', issue, e)
+		logger.error('Could not update Google Sheet: %s', e)
 
 
 ###
@@ -141,11 +141,11 @@ def process():
 		if int(issue_meta[issue]['page_count']) == int(issue_meta[issue]['tif_count']):
 			process_list.append(issue)
 			issue_meta[issue]['pg_match'] = 'TRUE'
-			logger.info('Yes, %s contains correct # of TIFFs', issue)
+			logger.info('Yes, contains correct # of TIFFs')
 
 		else:
 			issue_meta[issue]['pg_match'] = 'FALSE'
-			logger.error('Mismatch. Error with %s. Not processing', issue)
+			logger.error('Mismatch error. Not processing.')
 
 	# Check process list to see if we should proceed
 	if len(process_list) > 0:
@@ -238,7 +238,7 @@ def deskew(issue):
 		else:
 			logger.info('Skipping %s as per spreadsheet', tif)
 
-	logger.info('Finished deskewing TIFFs for %s', issue)
+	logger.info('Finished deskewing TIFFs')
 
 
 ###
@@ -251,7 +251,25 @@ def tif_meta(issue):
 	date = issue_meta[issue]['date']
 	vol = issue_meta[issue]['vol']
 	issue_no = issue_meta[issue]['issue_no']
+
+	# some tifs were rotated and lost exif data, including x and y resolution -- let's fix that
+	# get the list of original tifs
+	rotate_list = glob.glob1(issue_path,'*_orig.tif')
+
+	# for each, copy exif data from original to rotated tif
+	for orig in rotate_list:
+		o_path = issue_path+sep+f
+		r_path = o_path.replace('_orig','')
+
+		# use exif command found here: http://u88.n24.queensu.ca/exiftool/forum/index.php?topic=3440.0
+		exif_string = 'exiftool -tagsfromfile {} "-all:all>all:all" {}'.format(o_path, r_path)
+
+		try:
+			subprocess.check_output(exif_string)
+		except Exception as e:
+			logger.error('Error copying Exif data from %s', f)
 	
+	# now that the rotated tifs have been cleaned up, let's add standard metadata to all production tifs
 	for tif in tif_list:
 		tif_path = issue_path + sep + tif
 		pg_num = tif[13:16]
@@ -263,7 +281,7 @@ def tif_meta(issue):
 		except Exception as e:
 			logger.error('Error running Exiftool on %s: %s', tif, e)
 
-	logger.info('Finished fixing TIFF tags for %s', issue)
+	logger.info('Finished fixing TIFF tags')
 
 	original_list = glob.glob1(issue_path,'*.tif_original')
 	for original in original_list:
@@ -281,6 +299,7 @@ def derivs(issue):
 	tif_list = issue_meta[issue]['tifs']
 	jp2_list = glob.glob1(issue_path,'*.jp2')
 
+	logger.info('Starting on JP2s...')
 	for tif in tif_list:
 		tif_path = issue_path + sep + tif
 		jp2 = tif.replace('.tif','.jp2')
@@ -297,10 +316,10 @@ def derivs(issue):
 
 	jp2_list = glob.glob1(issue_path,'*.jp2')
 	if len(jp2_list) == len(tif_list):
-		logger.info('Finished with derivs for %s', issue)
+		logger.info('Finished with derivs')
 		issue_meta[issue]['derivs'] = 'TRUE'
 	else:
-		logger.error('Problem with derivs for %s', issue)
+		logger.error('Problem with derivs')
 		issue_meta[issue]['derivs'] = 'FALSE'
 
 
@@ -312,6 +331,8 @@ def jp2xml(issue):
 	tif_list = issue_meta[issue]['tifs']
 	page_count = len(tif_list)
 	page_num = 1
+
+	logger.info('Starting to add XML to JP2s...')
 
 	for a_file in tif_list:
 
@@ -347,7 +368,7 @@ def jp2xml(issue):
 		except Exception as e:
 			logger.error('Error with file %s: %s', a_jp2, e)
 
-	logger.info('Finished with JP2 XML for %s', issue)
+	logger.info('Finished with JP2 XML')
 
 
 
@@ -359,20 +380,18 @@ def ocr(issue):
 	hocr_list = glob.glob1(issue_path,'*.hocr')
 	pdf_list = glob.glob1(issue_path,'*.pdf')
 
+	logger.info('Starting OCR...')
+
 	for file in tif_list:
 		file_path = issue_path + sep + file
 		ocr_path = file_path.replace('.tif','')
 
 		# Run OCR -- we're creating HOCR and PDF files for each page, which we'll further process later
 
-		# if file.replace('.tif','.hocr') not in hocr_list:
-
 		try:
 			subprocess.check_output(['tesseract', file_path, ocr_path, 'hocr'])
 		except Exception as e:
 			logger.error('Error running Tesseract on %s: %s', file, e)
-		
-		# if file.replace('.tif','.pdf') not in pdf_list:
 
 		try:
 			subprocess.check_output(['tesseract', file_path, ocr_path, 'pdf'])
@@ -380,7 +399,7 @@ def ocr(issue):
 			logger.error('Error running Tesseract on %s: %s', file, e)
 
 	issue_meta[issue]['ocr'] = 'TRUE'
-	logger.info('Finished OCR on %s', issue)
+	logger.info('Finished OCR')
 
 
 ###
@@ -389,10 +408,12 @@ def ocr(issue):
 def downsample_pdf(issue):
     pdf_list = glob.glob1(issue_path,'*.pdf')
 
+    logger.info('Downsampling PDFs...')
+
     for a_pdf in pdf_list:
         hires_pdf_path = issue_path + sep + a_pdf
         lowres_pdf_path = hires_pdf_path.replace('.pdf','_lo.pdf')
-        gs_string_pdf = '"C:\\Program Files (x86)\\gs\\gs9.21\\bin\\gswin32c.exe" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dAutoRotatePages=/None -dNOPAUSE -dQUIET -dBATCH -sOutputFile=' + lowres_pdf_path + ' ' + hires_pdf_path
+        gs_string_pdf = '"C:\\Program Files\\gs\\gs9.22\\bin\\gswin64c.exe" -sDEVICE=pdfwrite -dCompatibilityLevel=1.4 -dPDFSETTINGS=/ebook -dAutoRotatePages=/None -dNOPAUSE -dQUIET -dBATCH -sOutputFile=' + lowres_pdf_path + ' ' + hires_pdf_path
 
         try:
             subprocess.check_output(gs_string_pdf)
@@ -405,7 +426,7 @@ def downsample_pdf(issue):
         except Exception as e:
             logger.error('Problem trying to remove and rename file %s: %s', a_pdf, e)
 
-    logger.info('Finished downsampling PDFs for %s', issue)
+    logger.info('Downsampled PDFs')
 
 
 ###
@@ -436,14 +457,14 @@ def pdf_merge(issue):
 
 		pdf = file(pdf_filename, 'rb')
 		merger.append(pdf)
-		# Advance count
+		# advance the count
 		pg_count += 1
 
 	output = issue_path + '\\BAR_' + issue + '.pdf'
 	out = file(output, 'wb')
 	merger.write(out)
 	merger.close()
-	logger.info('Created issue PDF for %s', issue)
+	logger.info('Created issue PDF')
 
 
 ###
@@ -473,7 +494,7 @@ def hocr2alto(issue):
 		except Exception as e:
 			logger.error('Problem trying to remove file %s: %s', hocr, e)
 
-	logger.info('Finished creating ALTO XML for %s', issue)
+	logger.info('Created ALTO XML')
 
 
 ###
@@ -485,10 +506,9 @@ def to_QC(issue):
 
 	try:
 		shutil.move(source, destination)
+		logger.info('Moved to QC')
 	except Exception as e:
 		logger.error('Error moving %s to QC: %s', issue, e)
-	else:
-		logger.info('Cleaning up... Moved %s to QC', issue)
 
 
 ###
@@ -645,7 +665,7 @@ def create_METS(issue):
 			with open(output_path, 'wb') as f:
 				f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 				f.write(etree.tostring(tree, pretty_print = True))
-			logger.info('Created METS XML for %s', issue)
+			logger.info('Created METS XML')
 
 		except Exception as e:
 			logger.error('Could not create METS XML for %s', issue)
@@ -662,28 +682,35 @@ def to_IA():
 	logger.info('Let\'s upload completed issues to the Internet Archive')
 	for root, dirs, files in os.walk(source_path):
 
-		# by now we've QCed the issue, so we can remove those "orig" tiffs
-		for file in files:
-			if '_orig.tif' in file:
-				os.remove(file)
+		if dirs:
 
-		for dir in dirs:
-			issue = dir
-			issue_path = os.path.join(root, dir)
-			ia_meta = uploadBAR.get_metadata(issue)
+			# by now we've QCed the issue, so we can remove those "orig" tiffs
+			for file in files:
+				if '_orig.tif' in file:
+					os.remove(file)
 
-			# check to make sure we didn't already upload this one
-			if ia_meta['ia_upload'] == '':
+			for dir in dirs:
+				issue = dir
+				issue_path = os.path.join(root, dir)
+				ia_meta = uploadBAR.get_metadata(issue)
 
-				zip_path = '{}\\{}_images.zip'.format(source_path, issue_meta['ia_id'])
-				uploadBAR.zip(issue)
-				uploadBAR.upload(issue)
-				uploadBAR.update_sheet(issue)
-				logger.info('Finished with %s -- moving on to next issue.', issue)
+				# check to make sure we didn't already upload this one
+				if ia_meta['ia_upload'] == '':
 
-			else:
-				loger.info('%s was already uploaded to IA. Moving to next issue.', issue)
+					zip_path = '{}\\{}_images.zip'.format(source_path, issue_meta['ia_id'])
+					uploadBAR.zip(issue)
+					uploadBAR.upload(issue)
+					uploadBAR.update_sheet(issue)
+					logger.info('Finished with %s -- moving on to next issue.', issue)
 
+				else:
+					logger.info('%s was already uploaded to IA. Moving to next issue.', issue)
+
+			logger.info('Uploaded issues to IA.')
+
+		else:
+
+			logger.info('Nothing to upload to IA right now.')
 
 ###
 # Move QC'd issues to backup
@@ -695,27 +722,31 @@ def to_archive():
 	logger.info('Let\'s move completed issues to Archive')
 	for root, dirs, files in os.walk(source_path):
 
-		# by now we've QCed the issue, so we can remove those "orig" tiffs
-		for file in files:
-			if '_orig.tif' in file:
-				os.remove(file)
+		if dirs:
 
-		for dir in dirs:
-			issue = dir
-			issue_path = os.path.join(root, dir)
+			# by now we've QCed the issue, so we can remove those "orig" tiffs
+			for file in files:
+				if '_orig.tif' in file:
+					os.remove(file)
 
-			year = issue[0:4]
-			destination = backup_path + year + sep + issue
+			for dir in dirs:
+				issue = dir
+				issue_path = os.path.join(root, dir)
 
-			try:
-				logger.info('Trying to move %s to Archive...', issue)
-				shutil.move(issue_path, destination)
-				logger.info('Moved %s to Archive', issue)
-			except Exception as e:
-				logger.error('Error moving %s to Archive: %s', issue, e)
+				year = issue[0:4]
+				destination = backup_path + year + sep + issue
 
-	logger.info('Moved issues to Archive')
+				try:
+					logger.info('Trying to move %s to Archive...', issue)
+					shutil.move(issue_path, destination)
+					logger.info('Moved %s to Archive', issue)
+				except Exception as e:
+					logger.error('Error moving %s to Archive: %s', issue, e)
 
+			logger.info('Moved issues to Archive')
+
+		else:
+			logger.info('Nothing to archive right now.')
 
 ###
 # Start processing
@@ -727,7 +758,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 # create a file handler
-handler = logging.FileHandler('processBAR.log')
+now = datetime.datetime.now()
+handler = logging.FileHandler('logs\\' + now.strftime("%Y-%m-%d-%H-%M") + '.log')
 handler.setLevel(logging.INFO)
 
 # create a logging format
@@ -738,6 +770,7 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 # Starting the run
+logger.info('=======================')
 logger.info('Script started...')
 
 # Constants
@@ -755,11 +788,10 @@ process_list = process()
 for issue in process_list:
 	issue_path = source_path + issue
 	
-	logger.info('---------------------------------------------------------')
-	logger.info('Starting to process %s', issue)
+	logger.info('========== %s =========', issue)
 
 	create_METS(issue)
-	# deskew(issue)
+	deskew(issue)
 	tif_meta(issue)
 	derivs(issue)
 	jp2xml(issue)
@@ -770,11 +802,10 @@ for issue in process_list:
 	to_QC(issue)
 	update_sheet(issue)
 
-	logger.info('Finished processing %s', issue)
-	logger.info('---------------------------------------------------------')
+	logger.info('Finished processing %s \n', issue)
 
 to_IA()
 to_archive()
 
 logger.info('ALL DONE')
-logger.info('---------------------------------------------------------')
+logger.info('=======================')
