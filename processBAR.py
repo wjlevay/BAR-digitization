@@ -39,7 +39,10 @@ def get_metadata():
 
 			# Count the number of TIFFs in the issue folder
 			# Later we'll compare this number to the page count recorded in the Google Sheet
-			tif_list = glob.glob1(issue_path,'*.tif')
+			tif_list = []
+			for file in os.listdir(issue_path):
+				if '.tif' in file and len(file) == 20:
+					tif_list.append(file)
 			an_issue['tifs'] = tif_list
 			an_issue['tif_count'] = len(tif_list)
 
@@ -258,11 +261,11 @@ def tif_meta(issue):
 
 	# for each, copy exif data from original to rotated tif
 	for orig in rotate_list:
-		o_path = issue_path+sep+f
+		o_path = issue_path+sep+orig
 		r_path = o_path.replace('_orig','')
 
 		# use exif command found here: http://u88.n24.queensu.ca/exiftool/forum/index.php?topic=3440.0
-		exif_string = 'exiftool -tagsfromfile {} "-all:all>all:all" {}'.format(o_path, r_path)
+		exif_string = 'exiftool -tagsfromfile {} "-all:all>all:all" {} -overwrite_original'.format(o_path, r_path)
 
 		try:
 			subprocess.check_output(exif_string)
@@ -274,21 +277,13 @@ def tif_meta(issue):
 		tif_path = issue_path + sep + tif
 		pg_num = tif[13:16]
 
-		exif_string = 'exiftool -m -Title="Bay Area Reporter. (San Francisco, Calif.), ' + date + ', [p ' + pg_num + ']" -Description="Page from Bay Area Reporter" -Subject= -DocumentName=' + LCCN + ' -ImageUniqueID=' + date + '_1_' + pg_num + ' -FileSource="Digital Camera" -Artist="GLBT Historical Society" -Copyright="Benro Enterprises, Inc." -Make="Image Access" -Model="Bookeye4 V1-A, SN#BE4-SGS-V1A-00073239BCFD" ' + tif_path
-
+		exif_string = 'exiftool -m -Title="Bay Area Reporter. (San Francisco, Calif.), {}, [p {}]" -Description="Page from Bay Area Reporter" -Subject= -DocumentName={} -ImageUniqueID={}_1_{} -FileSource="Digital Camera" -Artist="GLBT Historical Society" -Copyright="Benro Enterprises, Inc." -Make="Image Access" -Model="Bookeye4 V1-A, SN#BE4-SGS-V1A-00073239BCFD" {} -overwrite_original'.format(date, pg_num, LCCN, date, pg_num, tif_path)
 		try:
 			subprocess.check_output(exif_string)
 		except Exception as e:
 			logger.error('Error running Exiftool on %s: %s', tif, e)
 
 	logger.info('Finished fixing TIFF tags')
-
-	original_list = glob.glob1(issue_path,'*.tif_original')
-	for original in original_list:
-		try:
-			os.remove(issue_path+sep+original)
-		except Exception as e:
-			logger.error('Could not remove %s: %s', original, e)
 
 
 
@@ -383,7 +378,7 @@ def ocr(issue):
 	logger.info('Starting OCR...')
 
 	for file in tif_list:
-		file_path = issue_path + sep + file
+		file_path = os.path.join(issue_path, file)
 		ocr_path = file_path.replace('.tif','')
 
 		# Run OCR -- we're creating HOCR and PDF files for each page, which we'll further process later
@@ -684,24 +679,67 @@ def to_IA():
 
 		if dirs:
 
-			# by now we've QCed the issue, so we can remove those "orig" tiffs
-			for file in files:
-				if '_orig.tif' in file:
-					os.remove(file)
-
-			for dir in dirs:
-				issue = dir
-				issue_path = os.path.join(root, dir)
+			for issue in dirs:
+				issue_path = os.path.join(root, issue)
 				ia_meta = uploadBAR.get_metadata(issue)
 
 				# check to make sure we didn't already upload this one
 				if ia_meta['ia_upload'] == '':
 
-					zip_path = '{}\\{}_images.zip'.format(source_path, issue_meta['ia_id'])
-					uploadBAR.zip(issue)
-					uploadBAR.upload(issue)
-					uploadBAR.update_sheet(issue)
+					# since we've QCed this issue by now, let's clean up non-rotated tiffs
+					for file in os.listdir(issue_path):
+						if '_orig' in file:
+							file_path = os.path.join(issue_path,file)
+							os.remove(file_path)
+
+					# set path for zipfile
+					zip_path = '{}\\{}_images.zip'.format(source_path, ia_meta['ia_id'])
+
+					# open zipfile
+					logger.info('Creating zip archive...')
+					with zipfile.ZipFile(zip_path, mode='w', allowZip64 = True) as zf:
+					
+						# loop through files and add TIFFs to ZIP
+						for file in os.listdir(issue_path):
+							if '.tif' in file:
+								file_path = os.path.join(issue_path, file)
+
+								try:
+									zf.write(file_path)
+								except Exception as e:
+									looger.error('An error occurred with %s: %s', file, e)
+									pass
+
+					# TO DO: confirm zip has correct # of TIFFs before closing
+					# close zipfile
+					zf.close()
+					logger.info('Created zipfile for', issue)
+
+					
+					# create a command-line string to run as a subprocess
+					ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:bayareareporter" -m "language:English"'.format(ia_meta['ia_id'], zip_path, ia_meta['ia_title'], ia_meta['date'], ia_meta['publisher'])
+
+					try:
+						logger.info('Uploading...')
+						r = subprocess.check_output(ia_string, stderr=subprocess.STDOUT)
+						logger.info(r)
+						issue_meta['ia_upload'] = 'TRUE'
+					except Exception as e:
+						logger.error('Problem uploading %s: %s', issue, e)
+						pass
+
+					# TO DO: confirm upload before deleting zipfile
+
+					# delete zip
+					try:
+						os.remove(zip_path)
+						logger.info('Removed', zip_path)
+					except Exception as e:
+						logger.error('Problem removing %s: %s', zip_path, e)
+						pass
+
 					logger.info('Finished with %s -- moving on to next issue.', issue)
+					uploadBAR.update_sheet(issue)
 
 				else:
 					logger.info('%s was already uploaded to IA. Moving to next issue.', issue)
@@ -724,14 +762,15 @@ def to_archive():
 
 		if dirs:
 
-			# by now we've QCed the issue, so we can remove those "orig" tiffs
-			for file in files:
-				if '_orig.tif' in file:
-					os.remove(file)
+			for issue in dirs:
+				issue_path = os.path.join(root, issue)
 
-			for dir in dirs:
-				issue = dir
-				issue_path = os.path.join(root, dir)
+				# since we've QCed this issue by now, let's clean up any remaning non-rotated tiffs
+				for file in os.listdir(issue_path):
+					if '_orig' in file:
+						logger.info('Cleaning up non-rotated TIFFs...')
+						file_path = os.path.join(issue_path,file)
+						os.remove(file_path)
 
 				year = issue[0:4]
 				destination = backup_path + year + sep + issue
@@ -804,7 +843,7 @@ for issue in process_list:
 
 	logger.info('Finished processing %s \n', issue)
 
-to_IA()
+# to_IA()
 to_archive()
 
 logger.info('ALL DONE')
