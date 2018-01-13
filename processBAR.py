@@ -6,15 +6,11 @@
 # ideally at night or on the weekend, while no one is using the local machine for scanning.
 ###
 
-import logging, glob, os, re, gspread, shutil, subprocess, datetime, zipfile
-import uploadBAR, rotatecrop
+import logging, glob, os, re, gspread, shutil, subprocess, datetime, zipfile, math, cv2
 from lxml import etree
 from xml.sax.saxutils import escape
 from PyPDF2 import PdfFileMerger, PdfFileReader
 from oauth2client.service_account import ServiceAccountCredentials
-import math
-import cv2
-import numpy as np
 
 ###
 # Get issue metadata from Google Sheet
@@ -160,12 +156,42 @@ def process():
 
 	return process_list
 
+###
+# Compute largest rectangle after rotating
+# From: https://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders/16778797
+###
+def rotatedRectWithMaxArea(w, h, angle):
+  """
+  Given a rectangle of size wxh that has been rotated by 'angle' (in
+  radians), computes the width and height of the largest possible
+  axis-aligned rectangle (maximal area) within the rotated rectangle.
+  """
+  if w <= 0 or h <= 0:
+    return 0,0
+
+  width_is_longer = w >= h
+  side_long, side_short = (w,h) if width_is_longer else (h,w)
+
+  # since the solutions for angle, -angle and 180-angle are all the same,
+  # if suffices to look at the first quadrant and the absolute values of sin,cos:
+  sin_a, cos_a = abs(math.sin(angle)), abs(math.cos(angle))
+  if side_short <= 2.*sin_a*cos_a*side_long or abs(sin_a-cos_a) < 1e-10:
+    # half constrained case: two crop corners touch the longer side,
+    #   the other two corners are on the mid-line parallel to the longer line
+    x = 0.5*side_short
+    wr,hr = (x/sin_a,x/cos_a) if width_is_longer else (x/cos_a,x/sin_a)
+  else:
+    # fully constrained case: crop touches all 4 sides
+    cos_2a = cos_a*cos_a - sin_a*sin_a
+    wr,hr = (w*cos_a - h*sin_a)/cos_2a, (h*cos_a - w*sin_a)/cos_2a
+
+  return wr,hr
 
 ###
 # Deskew TIFFs
 ###
 def deskew(issue):
-	tif_list = glob.glob1(issue_path,'*.tif')
+	tif_list = [f for f in os.listdir(issue_path) if f.endswith('tif') and len(f) == 20]
 	
 	# did the scanner operator flag some pages as potentially confusing to deskew?
 	if issue_meta[issue]['no_rotate'] is not None:
@@ -182,6 +208,7 @@ def deskew(issue):
 
 			tif_path = issue_path + sep + tif
 			rotate_path = tif_path.replace('.tif','_rotate.tif')
+			crop_path = tif_path.replace('.tif', '_crop.tif')
 
 			find_angle = 'deskew -l 80 ' + tif_path
 
@@ -195,7 +222,7 @@ def deskew(issue):
 				m = re.search('Skew angle found: (.*)', output)
 				if m is not None:
 					skew = float(m.group(1).rstrip())
-					rotate_angle = skew
+					rotate_angle = skew * -1
 
 					# set our min and max rotation angles
 					if abs(rotate_angle) > 0.1 and abs(rotate_angle) < 1.25:
@@ -204,34 +231,36 @@ def deskew(issue):
 						backup_tif = issue_path + sep + tif.replace('.tif','_orig.tif')
 						shutil.copy2(tif_path, backup_tif)
 
-						# rotate!
-						# method from https://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders/16778797
-						# revisit this... maybe we can go back to using imagemagick to rotate, then use the max rectangle area method to compute dimensions, then imagemagick again to crop from the center...
+						# get width and height of image before rotating
+						width, height = cv.GetSize(tif_path)
+
+						# rotate
+						rotate_string = 'magick {} -background #000000 -rotate {} +repage {}'.format(tif_path, str(rotate_angle), rotate_path)
+
 						try:
-							image = cv2.imread(tif_path)
-							i = rotate_angle
-							image_height, image_width = image.shape[0:2]
-							image_orig = np.copy(image)
-							image_rotated = rotatecrop.rotate_image(image, i)
-							image_rotated_cropped = rotatecrop.crop_around_center(
-							    image_rotated,
-							    *rotatecrop.largest_rotated_rect(
-							        image_width,
-							        image_height,
-							        math.radians(i)
-							    )
-							)
-
-							cv2.imwrite(rotate_path, image_rotated_cropped)
-
+							subprocess.check_output(rotate_string)
 						except Exception as e:
 							logger.error('Error rotating %s: %s', tif, e)
 						else:
-							logger.info('Rotating %s at %s degrees', tif, rotate_angle)
+							logger.info('Rotating %s at %s', tif, rotate_angle)
+
+						# now let's compute largest rectangle in rotated TIFF and crop
+						crop_width, crop_height = rotatedRectWithMaxArea(width, height, math.radians(rotate_angle))
+
+						# and crop using imagemagick
+						crop_path = 
+						crop_string = 'convert {} -gravity center -crop {}x{}+0+0 +repage {}'.format(rotate_path, str(crop_width), str(crop_height), crop_path)
 
 						try:
+							subprocess.check_output(crop_string)
+						except Exception as e:
+							logger.error('Error cropping %s: %s', tif, e)
+
+						# file cleanup
+						try:
 							os.remove(tif_path)
-							os.rename(rotate_path, tif_path)
+							os.remove(rotate_path)
+							os.rename(crop_path, tif_path)
 						except Exception as e:
 							logger.error('Problem removing or renaming %s: %s', tif, e)
 
@@ -669,88 +698,6 @@ def create_METS(issue):
 		logger.info('METS XML already exists!')
 
 ###
-# Upload QC'd issues to Internet Archive
-###
-def to_IA():
-	source_path = 'C:\\BAR\\toArchive\\'
-	
-	logger.info('Let\'s upload completed issues to the Internet Archive')
-	for root, dirs, files in os.walk(source_path):
-
-		if dirs:
-
-			for issue in dirs:
-				issue_path = os.path.join(root, issue)
-				ia_meta = uploadBAR.get_metadata(issue)
-
-				# check to make sure we didn't already upload this one
-				if ia_meta['ia_upload'] == '':
-
-					# since we've QCed this issue by now, let's clean up non-rotated tiffs
-					for file in os.listdir(issue_path):
-						if '_orig' in file:
-							file_path = os.path.join(issue_path,file)
-							os.remove(file_path)
-
-					# set path for zipfile
-					zip_path = '{}\\{}_images.zip'.format(source_path, ia_meta['ia_id'])
-
-					# open zipfile
-					logger.info('Creating zip archive...')
-					with zipfile.ZipFile(zip_path, mode='w', allowZip64 = True) as zf:
-					
-						# loop through files and add TIFFs to ZIP
-						for file in os.listdir(issue_path):
-							if '.tif' in file:
-								file_path = os.path.join(issue_path, file)
-
-								try:
-									zf.write(file_path)
-								except Exception as e:
-									looger.error('An error occurred with %s: %s', file, e)
-									pass
-
-					# TO DO: confirm zip has correct # of TIFFs before closing
-					# close zipfile
-					zf.close()
-					logger.info('Created zipfile for', issue)
-
-					
-					# create a command-line string to run as a subprocess
-					ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:bayareareporter" -m "language:English"'.format(ia_meta['ia_id'], zip_path, ia_meta['ia_title'], ia_meta['date'], ia_meta['publisher'])
-
-					try:
-						logger.info('Uploading...')
-						r = subprocess.check_output(ia_string, stderr=subprocess.STDOUT)
-						logger.info(r)
-						issue_meta['ia_upload'] = 'TRUE'
-					except Exception as e:
-						logger.error('Problem uploading %s: %s', issue, e)
-						pass
-
-					# TO DO: confirm upload before deleting zipfile
-
-					# delete zip
-					try:
-						os.remove(zip_path)
-						logger.info('Removed', zip_path)
-					except Exception as e:
-						logger.error('Problem removing %s: %s', zip_path, e)
-						pass
-
-					logger.info('Finished with %s -- moving on to next issue.', issue)
-					uploadBAR.update_sheet(issue)
-
-				else:
-					logger.info('%s was already uploaded to IA. Moving to next issue.', issue)
-
-			logger.info('Uploaded issues to IA.')
-
-		else:
-
-			logger.info('Nothing to upload to IA right now.')
-
-###
 # Move QC'd issues to backup
 ###
 def to_archive():
@@ -814,7 +761,6 @@ logger.info('Script started...')
 
 # Constants
 source_path = 'C:\\BAR\\toProcess\\'
-
 destination_path = 'C:\\BAR\\toQC\\'
 
 sep = '\\'
@@ -843,7 +789,6 @@ for issue in process_list:
 
 	logger.info('Finished processing %s \n', issue)
 
-# to_IA()
 to_archive()
 
 logger.info('ALL DONE')
