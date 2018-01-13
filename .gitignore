@@ -61,3 +61,4 @@ ia.ini
 fix.csv
 fix.txt
 *.pyc
+*.log

@@ -206,7 +206,7 @@ def deskew(issue):
 
 						# rotate!
 						# method from https://stackoverflow.com/questions/16702966/rotate-image-and-crop-out-black-borders/16778797
-
+						# revisit this... maybe we can go back to using imagemagick to rotate, then use the max rectangle area method to compute dimensions, then imagemagick again to crop from the center...
 						try:
 							image = cv2.imread(tif_path)
 							i = rotate_angle
@@ -466,7 +466,7 @@ def pdf_merge(issue):
 # Transform HOCR to ALTO using Saxon and XSL
 ###
 def hocr2alto(issue):
-	xsl_filename = '..\hOCR-to-ALTO\hocr2alto2.1.xsl'
+	xsl_filename = 'hocr2alto2.1.xsl'
 	hocr_list = glob.glob1(issue_path,'*.hocr')
 	xml_list = glob.glob1(issue_path,'*.xml')
 
@@ -476,7 +476,7 @@ def hocr2alto(issue):
 		xml = hocr.replace('.hocr','.xml')
 		xml_filename = issue_path + sep + xml
 		
-		saxon_string = 'java -cp C:\saxon\saxon9he.jar net.sf.saxon.Transform -t -s:' + hocr_filename + ' -xsl:' + xsl_filename + ' -o:' + xml_filename
+		saxon_string = 'java -cp C:\saxon\saxon9he.jar net.sf.saxon.Transform -t -s:{} -xsl:{} -o:{}'.format(hocr_filename, xsl_filename, xml_filename)
 
 		try:
 			subprocess.check_output(saxon_string)
@@ -765,10 +765,10 @@ def to_archive():
 			for issue in dirs:
 				issue_path = os.path.join(root, issue)
 
+				logger.info('Cleaning up any non-rotated TIFFs...')
 				# since we've QCed this issue by now, let's clean up any remaning non-rotated tiffs
 				for file in os.listdir(issue_path):
 					if '_orig' in file:
-						logger.info('Cleaning up non-rotated TIFFs...')
 						file_path = os.path.join(issue_path,file)
 						os.remove(file_path)
 
