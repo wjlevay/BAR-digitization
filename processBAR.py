@@ -29,6 +29,15 @@ def get_metadata():
 	wks = sh.worksheet('itemList')
 
 	for root, dirs, files in os.walk(source_path):
+
+		# first, let's clean up the csv files created by Opus Freeflow
+		for file in files:
+			if file.endswith('csv'):
+				csv = os.path.join(root,file)
+				logger.info('Removing CSVs...')
+				os.remove(csv)
+
+		# Now let's get down to business
 		for dir in dirs:
 			issue = dir
 			issue_path = os.path.join(root, dir)
