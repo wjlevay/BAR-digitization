@@ -1,7 +1,7 @@
 import os, lxml.etree as ET
 
-# source = "G:\\Dropbox (GLBTHS)\\Archive\\BAR\\"
-source = 'test\\'
+source = "G:\\Dropbox (GLBTHS)\\Archive\\BAR\\"
+# source = 'test\\'
 
 for root, dirs, files in os.walk(source):
 	for file in files:
@@ -26,14 +26,13 @@ for root, dirs, files in os.walk(source):
 				if 'ComposedBlock' in element.tag:
 					element.getparent().remove(element)
 
-
 			# write out to new file
 			newfile = filepath.replace('.xml','_new.xml')
 			with open(newfile, 'wb') as f:
 				f.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
 				f.write(ET.tostring(tree, pretty_print = True))
 			print 'Writing', newfile
-
+		
 			os.remove(filepath)
 			os.rename(newfile, filepath)
 

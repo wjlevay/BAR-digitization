@@ -73,7 +73,7 @@ def delete_files(a_list):
 	print('Files have been deleted.')
 
 
-source_path = 'F:\\Dropbox (GLBTHS)\\Archive\\BAR\\'
+source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\'
 year = raw_input('Enter the year from which to delete files: ')
 
 del_list = get_delete_list(year)
