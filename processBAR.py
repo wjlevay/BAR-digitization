@@ -7,6 +7,7 @@
 ###
 
 import logging, glob, os, re, gspread, shutil, subprocess, datetime, zipfile, math, cv2
+import numpy as np
 from lxml import etree
 from xml.sax.saxutils import escape
 from PyPDF2 import PdfFileMerger, PdfFileReader
@@ -232,7 +233,9 @@ def deskew(issue):
 						shutil.copy2(tif_path, backup_tif)
 
 						# get width and height of image before rotating
-						width, height = cv.GetSize(tif_path)
+						img = cv2.imread(tif_path)
+						height = img.shape[0]
+						width = img.shape[1]
 
 						# rotate
 						rotate_string = 'magick {} -background #000000 -rotate {} +repage {}'.format(tif_path, str(rotate_angle), rotate_path)
@@ -248,8 +251,7 @@ def deskew(issue):
 						crop_width, crop_height = rotatedRectWithMaxArea(width, height, math.radians(rotate_angle))
 
 						# and crop using imagemagick
-						crop_path = 
-						crop_string = 'convert {} -gravity center -crop {}x{}+0+0 +repage {}'.format(rotate_path, str(crop_width), str(crop_height), crop_path)
+						crop_string = 'magick {} -gravity Center -crop {}x{}+0+0 +repage {}'.format(rotate_path, str(int(crop_width)), str(int(crop_height)), crop_path)
 
 						try:
 							subprocess.check_output(crop_string)
@@ -284,24 +286,24 @@ def tif_meta(issue):
 	vol = issue_meta[issue]['vol']
 	issue_no = issue_meta[issue]['issue_no']
 
-	# some tifs were rotated and lost exif data, including x and y resolution -- let's fix that
-	# get the list of original tifs
-	rotate_list = glob.glob1(issue_path,'*_orig.tif')
+	# # some tifs were rotated and lost exif data, including x and y resolution -- let's fix that
+	# # get the list of original tifs
+	# rotate_list = glob.glob1(issue_path,'*_orig.tif')
 
-	# for each, copy exif data from original to rotated tif
-	for orig in rotate_list:
-		o_path = issue_path+sep+orig
-		r_path = o_path.replace('_orig','')
+	# # for each, copy exif data from original to rotated tif
+	# for orig in rotate_list:
+	# 	o_path = issue_path+sep+orig
+	# 	r_path = o_path.replace('_orig','')
 
-		# use exif command found here: http://u88.n24.queensu.ca/exiftool/forum/index.php?topic=3440.0
-		exif_string = 'exiftool -tagsfromfile {} "-all:all>all:all" {} -overwrite_original'.format(o_path, r_path)
+	# 	# use exif command found here: http://u88.n24.queensu.ca/exiftool/forum/index.php?topic=3440.0
+	# 	exif_string = 'exiftool -tagsfromfile {} "-all:all>all:all" {} -overwrite_original'.format(o_path, r_path)
 
-		try:
-			subprocess.check_output(exif_string)
-		except Exception as e:
-			logger.error('Error copying Exif data from %s', f)
+	# 	try:
+	# 		subprocess.check_output(exif_string)
+	# 	except Exception as e:
+	# 		logger.error('Error copying Exif data from %s', f)
 	
-	# now that the rotated tifs have been cleaned up, let's add standard metadata to all production tifs
+	# let's add standard metadata to all production tifs
 	for tif in tif_list:
 		tif_path = issue_path + sep + tif
 		pg_num = tif[13:16]
