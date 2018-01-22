@@ -34,7 +34,7 @@ def get_metadata():
 		for file in files:
 			if file.endswith('csv'):
 				csv = os.path.join(root,file)
-				logger.info('Removing CSVs...')
+				logger.info('Removing CSV...')
 				os.remove(csv)
 
 		# Now let's get down to business
@@ -756,6 +756,7 @@ logger.setLevel(logging.INFO)
 
 # create a file handler
 now = datetime.datetime.now()
+logfile = now.strftime("%Y-%m-%d-%H-%M") + '.log'
 handler = logging.FileHandler('logs\\' + now.strftime("%Y-%m-%d-%H-%M") + '.log')
 handler.setLevel(logging.INFO)
 
@@ -778,6 +779,7 @@ sep = '\\'
 
 LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
 
+os.startfile('logs\\' + logfile)
 issue_meta = get_metadata()
 process_list = process()
 
