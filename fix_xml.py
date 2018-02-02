@@ -1,7 +1,6 @@
 import os, lxml.etree as ET
 
-source = "G:\\Dropbox (GLBTHS)\\Archive\\BAR\\"
-# source = 'test\\'
+source = "G:\\Dropbox (GLBTHS)\\Archive\\BAR\\1993\\"
 
 for root, dirs, files in os.walk(source):
 	for file in files:

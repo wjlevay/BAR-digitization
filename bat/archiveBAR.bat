@@ -1,0 +1,1 @@
+"C:\Python27\python.exe" "C:\Users\BLevay\Dropbox\GLBT\BAR-digitization\archiveBAR.py"

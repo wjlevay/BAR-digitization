@@ -1,6 +1,6 @@
 import os
 
-source_path = 'F:\\Dropbox (GLBTHS)\\Archive\\BAR'
+source_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR'
 
 def rename_mets():
 

@@ -4,6 +4,7 @@
 # by Bill Levay
 # This is an attempt at some automated image processing that can be run on a folder of TIFFs, 
 # ideally at night or on the weekend, while no one is using the local machine for scanning.
+# It aims to produce all derivative files required by the California Digital Newspaper Collection.
 ###
 
 import logging, glob, os, re, gspread, shutil, subprocess, datetime, zipfile, math, cv2
@@ -19,7 +20,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 def get_metadata():
 	# Google Sheet setup
 	scope = ['https://spreadsheets.google.com/feeds']
-	credentials = ServiceAccountCredentials.from_json_keyfile_name('BAR Digitization-fb1d45aa1d32.json', scope)
+	credentials = ServiceAccountCredentials.from_json_keyfile_name('config\\BAR Digitization-fb1d45aa1d32.json', scope)
 	gc = gspread.authorize(credentials)
 
 	issue_meta = {}
@@ -294,23 +295,6 @@ def tif_meta(issue):
 	date = issue_meta[issue]['date']
 	vol = issue_meta[issue]['vol']
 	issue_no = issue_meta[issue]['issue_no']
-
-	# # some tifs were rotated and lost exif data, including x and y resolution -- let's fix that
-	# # get the list of original tifs
-	# rotate_list = glob.glob1(issue_path,'*_orig.tif')
-
-	# # for each, copy exif data from original to rotated tif
-	# for orig in rotate_list:
-	# 	o_path = issue_path+sep+orig
-	# 	r_path = o_path.replace('_orig','')
-
-	# 	# use exif command found here: http://u88.n24.queensu.ca/exiftool/forum/index.php?topic=3440.0
-	# 	exif_string = 'exiftool -tagsfromfile {} "-all:all>all:all" {} -overwrite_original'.format(o_path, r_path)
-
-	# 	try:
-	# 		subprocess.check_output(exif_string)
-	# 	except Exception as e:
-	# 		logger.error('Error copying Exif data from %s', f)
 	
 	# let's add standard metadata to all production tifs
 	for tif in tif_list:
@@ -343,13 +327,14 @@ def derivs(issue):
 		# Run ImageMagick to create JP2s for each page
 		magick_string_jp2 = 'magick ' + tif_path + ' -define jp2:tilewidth=1024 -define jp2:tileheight=1024 -define jp2:rate=0.125 -define jp2:lazy -define jp2:ilyrrates="1,0.84,0.7,0.6,0.5,0.4,0.35,0.3,0.25,0.21,0.18,0.15,0.125,0.1,0.088,0.07,0.0625,0.05,0.04419,0.03716,0.03125,0.025,0.0221,0.01858,0.015625" ' + jp2_path
 		
-		#if jp2 not in jp2_list:
-		try:
-			subprocess.check_output(magick_string_jp2)
-		except Exception as e:
-			logger.error('Error running Imagemagick on %s: %s', tif, e)
+		if jp2 not in jp2_list:
+			try:
+				subprocess.check_output(magick_string_jp2)
+			except Exception as e:
+				logger.error('Error running Imagemagick on %s: %s', tif, e)
 
 	jp2_list = glob.glob1(issue_path,'*.jp2')
+
 	if len(jp2_list) == len(tif_list):
 		logger.info('Finished with derivs')
 		issue_meta[issue]['derivs'] = 'TRUE'
@@ -411,9 +396,9 @@ def jp2xml(issue):
 # OCR with Tesseract
 ###
 def ocr(issue):
-	tif_list = issue_meta[issue]['tifs']
-	hocr_list = glob.glob1(issue_path,'*.hocr')
-	pdf_list = glob.glob1(issue_path,'*.pdf')
+	tif_list = [f for f in os.listdir(issue_path) if f.endswith('tif') and len(f) == 20]
+	hocr_list = [f for f in os.listdir(issue_path) if f.endswith('hocr') and len(f) == 20]
+	pdf_list = [f for f in os.listdir(issue_path) if f.endswith('pdf') and len(f) == 20]
 
 	logger.info('Starting OCR...')
 
@@ -506,7 +491,7 @@ def pdf_merge(issue):
 # Transform HOCR to ALTO using Saxon and XSL
 ###
 def hocr2alto(issue):
-	xsl_filename = 'hocr2alto2.1.xsl'
+	xsl_filename = 'stylesheets\\hocr2alto2.1.xsl'
 	hocr_list = glob.glob1(issue_path,'*.hocr')
 	xml_list = glob.glob1(issue_path,'*.xml')
 
@@ -708,42 +693,6 @@ def create_METS(issue):
 	else:
 		logger.info('METS XML already exists!')
 
-###
-# Move QC'd issues to backup
-###
-def to_archive():
-	source_path = 'C:\\BAR\\toArchive\\'
-	backup_path = 'G:\\Dropbox (GLBTHS)\\Archive\\BAR\\'
-
-	logger.info('Let\'s move completed issues to Archive')
-	for root, dirs, files in os.walk(source_path):
-
-		if dirs:
-
-			for issue in dirs:
-				issue_path = os.path.join(root, issue)
-
-				logger.info('Cleaning up any non-rotated TIFFs...')
-				# since we've QCed this issue by now, let's clean up any remaning non-rotated tiffs
-				for file in os.listdir(issue_path):
-					if '_orig' in file:
-						file_path = os.path.join(issue_path,file)
-						os.remove(file_path)
-
-				year = issue[0:4]
-				destination = backup_path + year + sep + issue
-
-				try:
-					logger.info('Trying to move %s to Archive...', issue)
-					shutil.move(issue_path, destination)
-					logger.info('Moved %s to Archive', issue)
-				except Exception as e:
-					logger.error('Error moving %s to Archive: %s', issue, e)
-
-			logger.info('Moved issues to Archive')
-
-		else:
-			logger.info('Nothing to archive right now.')
 
 ###
 # Start processing
@@ -774,7 +723,6 @@ logger.info('Script started...')
 # Constants
 source_path = 'C:\\BAR\\toProcess\\'
 destination_path = 'C:\\BAR\\toQC\\'
-
 sep = '\\'
 
 LCCN = 'sn92019460' #Library of Congress Call Number for Bay Area Reporter
@@ -801,8 +749,6 @@ for issue in process_list:
 	update_sheet(issue)
 
 	logger.info('Finished processing %s \n', issue)
-
-to_archive()
 
 logger.info('ALL DONE')
 logger.info('=======================')

@@ -145,7 +145,7 @@ def zip(issue):
 def upload(issue):
 
 	# create a command-line string to run as a subprocess
-	ia_string = 'ia --config-file ia.ini upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:bayareareporter" -m "language:English"'.format(issue_meta['ia_id'], zip_path, issue_meta['ia_title'], issue_meta['date'], issue_meta['publisher'])
+	ia_string = 'ia --config-file "config\\ia.ini" upload {} "{}" -m "title:{}" -m "date:{}" -m "publisher:{}" -m "rights:Copyright BAR Media, Inc." -m "contributor:GLBT Historical Society" -m "coverage:San Francisco (Calif.)" -m "mediatype:texts" -m "collection:bayareareporter" -m "language:English"'.format(issue_meta['ia_id'], zip_path, issue_meta['ia_title'], issue_meta['date'], issue_meta['publisher'])
 
 	try:
 		print 'Uploading...'
