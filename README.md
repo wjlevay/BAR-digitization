@@ -35,7 +35,9 @@ For each newspaper issue in the toProcess directory:
 
 ### How we're using it in-house
 
-You could start the script manually by opening a command prompt, navigating to its directory, and typing `python processBAR.py`
+You could start the script manually by opening a command prompt, navigating to its directory, and typing 
+
+`python processBAR.py`
 
 But we've created a Windows batch file that runs every night via Windows Task Scheduler, so you should need to kick it off manually unless there's a problem with the scheduler.
 
@@ -47,7 +49,9 @@ This is a version of the processBAR.py script that's used for fixing issues that
 
 The idea here is, you QC an issue and find, for example, a page that was badly rotated. You would first move this issue to the toFix folder, go into the issue directory, delete all files for that page EXCEPT for the original, unrotated and not-cropped, TIFF, then kick off this script, which will fix the embedded TIFF tags, generate new derivatives for the fixed page only, regenerate the issue PDF, and move the issue back into the QC queue.
 
-Start this script by opening a command prompt, navigating to the script directory, and typing `python reprocessBAR.py`
+Start this script by opening a command prompt, navigating to the script directory, and typing 
+
+`python reprocessBAR.py`
 
 ## archiveBAR.py
 
