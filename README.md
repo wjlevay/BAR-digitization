@@ -53,11 +53,13 @@ Start this script by opening a command prompt, navigating to the script director
 
 `python reprocessBAR.py`
 
+The log file should then automatically open in your text editor.
+
 ## archiveBAR.py
 
 ### Moves QC'd issues to an external drive
 
-You shouldn't have to mess with this script. There's a .bat file that runs every night via Windows Task Scheduler to shuttle issues that have passed QC to the external drive.
+You shouldn't have to mess with this script. There's a .bat file that runs every night via Windows Task Scheduler to shuttle issues that have passed QC to the external drive. This makes the `toArchive` directory sort of like a "hot folder."
 
 ## uploadBAR.py
 
@@ -72,7 +74,11 @@ For each newspaper issue for the year selected by the user, the script:
 
 To run this script:
 
-Open a command prompt and navigate to the script's directory. Type `python uploadBAR.py`. The system will ask which year you want to upload; enter the 4-digit year. It may take as many as 24 hours to upload a year's worth of issues to IA.
+Open a command prompt and navigate to the script's directory. Type 
+
+`python uploadBAR.py`
+
+The system will ask which year you want to upload; enter the 4-digit year. It may take as many as 24 hours to upload a year's worth of issues to IA.
 
 ### Additional step after upload completes
 
@@ -94,15 +100,11 @@ Let this run and it will fix every object in the collection. Thanks, Jason!
 
 ### fix_xml.py
 
-Regenerates ALTO XML to ensure there are no empty content boxes.
-
-You shouldn't have to run this again, since we edited the HOCR-to-ALTO stylesheet to accomplish the same thing. But it's here for posterity. If you need to use this, open the script in a text editor and edit the `source` value to the directory you want to target.
+__Regenerates ALTO XML to ensure there are no empty content boxes.__ You shouldn't have to run this again, since we edited the HOCR-to-ALTO stylesheet to accomplish the same thing. But it's here for posterity. If you need to use this, open the script in a text editor and edit the `source` value to the directory you want to target.
 
 ### copyALTO.py
 
-Copies ALTO XML files from the external drive to the internal drive.
-
-Another one-off script written to solve a specific problem: After running fix_xml.py we needed to send just the updated ALTO files back to the CDNC.
+__Copies ALTO XML files from the external drive to the internal drive.__ Another one-off script written to solve a specific problem: After running fix_xml.py we needed to send just the updated ALTO files back to the CDNC.
 
 ### renameMETS.py
 
