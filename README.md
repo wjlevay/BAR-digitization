@@ -39,7 +39,7 @@ You could start the script manually by opening a command prompt, navigating to i
 
 `python processBAR.py`
 
-But we've created a Windows batch file that runs every night via Windows Task Scheduler, so you should need to kick it off manually unless there's a problem with the scheduler.
+But we've created a Windows batch file that runs every night via Windows Task Scheduler, so you shouldn't need to kick it off manually unless there's a problem with the scheduler.
 
 ## reprocessBAR.py
 
